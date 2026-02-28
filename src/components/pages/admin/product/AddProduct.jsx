@@ -1,0 +1,956 @@
+import React, { useState, useEffect } from 'react';
+import AdminLayout from '../../../admin/AdminLayout';
+import { 
+  Save, 
+  Upload, 
+  ArrowLeft,
+  Info, 
+  Tag, 
+  Package, 
+  Search,
+  Image as ImageIcon,
+  RefreshCw,
+  Check,
+  X
+} from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { createProduct } from '../../../API/api-products';
+import { getCategories } from '../../../API/api-categories';
+import Swal from 'sweetalert2';
+
+const AddProduct = () => {
+  const navigate = useNavigate();
+  const [categories, setCategories] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
+    cate_id: '',
+    name: '',
+    slug: '',
+    original_price: '',
+    selling_price: '',
+    qty: '',
+    tax: '',
+    status: true,
+    trending: false,
+    small_description: '',
+    description: '',
+    meta_title: '',
+    meta_keywords: '',
+    meta_description: '',
+    image: null,
+    product_images: []
+  });
+  const [preview, setPreview] = useState(null);
+  const [additionalPreviews, setAdditionalPreviews] = useState([]);
+  const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+
+  // Fetch active categories on component mount
+  useEffect(() => {
+    fetchActiveCategories();
+  }, []);
+
+  const fetchActiveCategories = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await getCategories(token);
+      if (response && response.data) {
+        // Filter only active categories (status === 1 or true)
+        const activeCategories = response.data.filter(
+          category => category.status === 1 || category.status === true
+        );
+        setCategories(activeCategories);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        Swal.fire({
+          icon: 'error',
+          title: 'File Too Large',
+          text: 'Image size should be less than 5MB',
+          timer: 3000
+        });
+        return;
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid File Type',
+          text: 'Please upload JPG, JPEG, PNG or GIF images only',
+          timer: 3000
+        });
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, image: file }));
+      const reader = new FileReader();
+      reader.onloadend = () => setPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleMultipleFilesChange = (e) => {
+    const files = Array.from(e.target.files).slice(0, 5);
+    
+    // Validate each file
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) {
+        Swal.fire({
+          icon: 'error',
+          title: 'File Too Large',
+          text: 'Each image should be less than 5MB',
+          timer: 3000
+        });
+        return;
+      }
+      
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid File Type',
+          text: 'Please upload JPG, JPEG, PNG or GIF images only',
+          timer: 3000
+        });
+        return;
+      }
+    }
+
+    const previews = [];
+    
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        previews.push(reader.result);
+        if (previews.length === files.length) {
+          setAdditionalPreviews(previews);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    setFormData(prev => ({ ...prev, product_images: files }));
+  };
+
+  const removeMainImage = () => {
+    setFormData(prev => ({ ...prev, image: null }));
+    setPreview(null);
+  };
+
+  const removeAdditionalImage = (index) => {
+    const newPreviews = [...additionalPreviews];
+    newPreviews.splice(index, 1);
+    setAdditionalPreviews(newPreviews);
+    
+    const newFiles = [...formData.product_images];
+    newFiles.splice(index, 1);
+    setFormData(prev => ({ ...prev, product_images: newFiles }));
+  };
+
+  const generateSlug = () => {
+    if (!formData.name) return;
+    const slug = formData.name
+      .toLowerCase()
+      .replace(/[^\w\s]/gi, '')
+      .replace(/\s+/g, '-')
+      .replace(/--+/g, '-')
+      .replace(/^-+/, '')
+      .replace(/-+$/, '');
+    
+    setFormData(prev => ({ ...prev, slug }));
+    setSlugManuallyEdited(false);
+  };
+
+  // Auto-generate slug when name changes (if not manually edited)
+  useEffect(() => {
+    if (formData.name && !slugManuallyEdited) {
+      generateSlug();
+    }
+  }, [formData.name]);
+
+  const handleSlugInputChange = (e) => {
+    handleInputChange(e);
+    setSlugManuallyEdited(true);
+  };
+
+  const handleManualSlugRegenerate = () => {
+    generateSlug();
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    // Validate required fields
+    if (!formData.cate_id) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Please select a category'
+      });
+      return;
+    }
+    if (!formData.name.trim()) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Product name is required'
+      });
+      return;
+    }
+    if (!formData.original_price) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Original price is required'
+      });
+      return;
+    }
+    if (!formData.selling_price) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Selling price is required'
+      });
+      return;
+    }
+    if (!formData.qty) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Quantity is required'
+      });
+      return;
+    }
+    if (!formData.description.trim()) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Description is required'
+      });
+      return;
+    }
+    if (!formData.image) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Main product image is required'
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      
+      // Show loading
+      Swal.fire({
+        title: 'Creating Product',
+        html: 'Please wait...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        Swal.close();
+        Swal.fire({
+          icon: 'error',
+          title: 'Authentication Error',
+          text: 'No authentication token found'
+        });
+        return;
+      }
+
+      const formPayload = new FormData();
+      
+      // Append all form fields
+      formPayload.append('cate_id', formData.cate_id);
+      formPayload.append('name', formData.name.trim());
+      formPayload.append('slug', formData.slug || '');
+      formPayload.append('original_price', formData.original_price);
+      formPayload.append('selling_price', formData.selling_price);
+      formPayload.append('qty', formData.qty);
+      
+      if (formData.tax) {
+        formPayload.append('tax', formData.tax);
+      }
+      
+      formPayload.append('status', formData.status ? '1' : '0');
+      formPayload.append('trending', formData.trending ? '1' : '0');
+      
+      if (formData.small_description) {
+        formPayload.append('small_description', formData.small_description);
+      }
+      
+      formPayload.append('description', formData.description);
+      
+      if (formData.meta_title) {
+        formPayload.append('meta_title', formData.meta_title);
+      }
+      
+      if (formData.meta_keywords) {
+        formPayload.append('meta_keywords', formData.meta_keywords);
+      }
+      
+      if (formData.meta_description) {
+        formPayload.append('meta_description', formData.meta_description);
+      }
+      
+      // Append main image
+      if (formData.image) {
+        formPayload.append('image', formData.image);
+      }
+      
+      // Append multiple images
+      if (formData.product_images && formData.product_images.length > 0) {
+        formData.product_images.forEach(file => {
+          formPayload.append('product_images[]', file);
+        });
+      }
+
+      // Log FormData for debugging (optional)
+      for (let pair of formPayload.entries()) {
+        console.log(pair[0] + ': ' + pair[1]);
+      }
+
+      // Call API
+      const response = await createProduct(token, formPayload);
+      
+      Swal.close();
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        html: `<p>Product <strong>"${formData.name}"</strong> has been created successfully.</p>`,
+        timer: 6000,
+        timerProgressBar: true,
+        showConfirmButton: true,
+        confirmButtonText: 'View Products',
+        showCancelButton: true,
+        cancelButtonText: 'Add Another'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          navigate('/admin/products');
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+          // Reset form for another entry
+          setFormData({
+            cate_id: '',
+            name: '',
+            slug: '',
+            original_price: '',
+            selling_price: '',
+            qty: '',
+            tax: '',
+            status: true,
+            trending: false,
+            small_description: '',
+            description: '',
+            meta_title: '',
+            meta_keywords: '',
+            meta_description: '',
+            image: null,
+            product_images: []
+          });
+          setPreview(null);
+          setAdditionalPreviews([]);
+          setSlugManuallyEdited(false);
+        }
+      });
+
+    } catch (error) {
+      console.error('Error creating product:', error.response?.data || error);
+      
+      Swal.close();
+      
+      // Show validation errors
+      if (error.response?.status === 422) {
+        const errors = error.response.data.errors;
+        const errorMessages = Object.values(errors).flat().join('\n');
+        Swal.fire({
+          icon: 'error',
+          title: 'Validation Failed',
+          text: errorMessages
+        });
+      } else if (error.response?.status === 401) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Unauthorized',
+          text: 'Please login again'
+        });
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: error.response?.data?.message || 'Failed to create product'
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <AdminLayout>
+      {/* Mobile Header - Only visible on mobile */}
+      <div className="lg:hidden bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3">
+        <div className="flex items-center justify-between">
+          {/* Mobile Back Button */}
+          <button
+            onClick={() => navigate('/admin/products')}
+            className="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+          
+          {/* Mobile Title */}
+          <div className="flex flex-col items-center">
+            <h1 className="text-lg font-bold text-center">Add Product</h1>
+            <p className="text-xs text-blue-100 text-center">Create new product</p>
+          </div>
+          
+          {/* Empty div for spacing */}
+          <div className="w-10"></div>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto pt-5 lg:pt-5">
+        {/* Desktop Header - Hidden on mobile */}
+        <div className="hidden lg:block bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden mb-6">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <Package className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Add New Product</h1>
+                <p className="text-sm text-blue-100">Fill in all required fields</p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/admin/products')}
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Products
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden lg:mt-0 -mt-4">
+          {/* Mobile padding adjustment - only on mobile */}
+          <form onSubmit={handleSubmit} className="p-4 lg:p-6">
+            <div className="space-y-6 lg:space-y-8">
+              {/* Basic Information */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Info className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">Basic Information</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+                  {/* Category - Full width on mobile, 2 columns on desktop */}
+                  <div className="md:col-span-2 lg:col-span-1">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Category <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      name="cate_id"
+                      value={formData.cate_id}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    >
+                      <option value="">-- Select Category --</option>
+                      {categories.map(category => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                      {categories.length === 0 && (
+                        <option value="" disabled>No active categories available</option>
+                      )}
+                    </select>
+                    {categories.length === 0 && (
+                      <p className="text-xs text-red-500 mt-1">
+                        Please create an active category first
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Product Name */}
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Product Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="Enter product name"
+                    />
+                  </div>
+
+                  {/* Slug */}
+                  <div className="md:col-span-2 relative">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Slug
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        name="slug"
+                        value={formData.slug}
+                        onChange={handleSlugInputChange}
+                        className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all pr-12"
+                        placeholder="Auto-generated from product name"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleManualSlugRegenerate}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Regenerate slug"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Slug will be auto-generated from product name
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing & Inventory */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Tag className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">Pricing & Inventory</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+                  {/* Original Price */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Original Price <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                        ₹
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        name="original_price"
+                        value={formData.original_price}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full pl-10 pr-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="0.00"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Selling Price */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Selling Price <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                        ₹
+                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        name="selling_price"
+                        value={formData.selling_price}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full pl-10 pr-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="0.00"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quantity */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Quantity <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="qty"
+                      value={formData.qty}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="Enter quantity"
+                      min="0"
+                    />
+                  </div>
+
+                  {/* Tax */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Tax (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        name="tax"
+                        value={formData.tax}
+                        onChange={handleInputChange}
+                        className="w-full pl-4 pr-12 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Tax percentage"
+                        min="0"
+                        max="100"
+                      />
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                        %
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status & Trending */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                    <Check className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">Status Options</h2>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-6">
+                  <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="status"
+                      name="status"
+                      checked={formData.status}
+                      onChange={handleInputChange}
+                      className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                    <div>
+                      <label htmlFor="status" className="text-sm font-semibold text-gray-700 cursor-pointer">
+                        Active Status
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">Product will be visible to customers</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="trending"
+                      name="trending"
+                      checked={formData.trending}
+                      onChange={handleInputChange}
+                      className="w-5 h-5 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                    />
+                    <div>
+                      <label htmlFor="trending" className="text-sm font-semibold text-gray-700 cursor-pointer">
+                        Mark as Trending
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">Featured on homepage and trending sections</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-1.5 bg-blue-100 rounded-lg">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">Description</h2>
+                </div>
+
+                {/* Short Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Short Description
+                  </label>
+                  <textarea
+                    name="small_description"
+                    value={formData.small_description}
+                    onChange={handleInputChange}
+                    rows={2}
+                    className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    placeholder="Brief description of the product"
+                  />
+                </div>
+
+                {/* Full Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Full Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleInputChange}
+                    rows={4}
+                    required
+                    className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    placeholder="Detailed description of the product"
+                  />
+                </div>
+              </div>
+
+              {/* SEO Information */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Search className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">SEO Information</h2>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Meta Title
+                    </label>
+                    <input
+                      type="text"
+                      name="meta_title"
+                      value={formData.meta_title}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="SEO meta title"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Meta Keywords
+                    </label>
+                    <textarea
+                      name="meta_keywords"
+                      value={formData.meta_keywords}
+                      onChange={handleInputChange}
+                      rows={2}
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="Comma-separated keywords"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Meta Description
+                    </label>
+                    <textarea
+                      name="meta_description"
+                      value={formData.meta_description}
+                      onChange={handleInputChange}
+                      rows={3}
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                      placeholder="SEO meta description"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Product Images */}
+              <div className="space-y-4 lg:space-y-6">
+                <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <ImageIcon className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+                  </div>
+                  <h2 className="text-base lg:text-lg font-bold text-gray-800">Product Images</h2>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+                  {/* Main Image */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Main Product Image <span className="text-red-500">*</span>
+                    </label>
+                    {preview ? (
+                      <div className="relative">
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 bg-gray-50">
+                          <img
+                            src={preview}
+                            alt="Preview"
+                            className="w-full h-48 object-cover rounded-lg"
+                          />
+                          <button
+                            type="button"
+                            onClick={removeMainImage}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <label className="block cursor-pointer">
+                          <div className="flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-xl hover:border-blue-400 transition-colors bg-gray-50/50 hover:bg-blue-50/30">
+                            <Upload className="h-10 w-10 lg:h-12 lg:w-12 text-gray-400 mb-4" />
+                            <div className="text-sm text-gray-600 text-center">
+                              <span className="font-medium text-blue-600 hover:text-blue-500">
+                                Click to upload main image
+                              </span>
+                              <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF up to 5MB</p>
+                            </div>
+                          </div>
+                          <input
+                            type="file"
+                            onChange={handleFileChange}
+                            className="sr-only"
+                            accept="image/*"
+                            required
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Additional Images */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Additional Images (Optional)
+                    </label>
+                    <label className="block cursor-pointer">
+                      <div className="flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-xl hover:border-purple-400 transition-colors bg-gray-50/50 hover:bg-purple-50/30">
+                        <Upload className="h-10 w-10 text-gray-400 mb-3" />
+                        <div className="text-sm text-gray-600 text-center">
+                          <span className="font-medium text-purple-600 hover:text-purple-500">
+                            Click to upload additional images
+                          </span>
+                          <p className="text-xs text-gray-500 mt-2">Select multiple images (Max 5)</p>
+                          <p className="text-xs text-gray-500">PNG, JPG, GIF up to 5MB each</p>
+                        </div>
+                      </div>
+                      <input
+                        type="file"
+                        onChange={handleMultipleFilesChange}
+                        className="sr-only"
+                        accept="image/*"
+                        multiple
+                      />
+                    </label>
+
+                    {/* Additional Images Preview */}
+                    {additionalPreviews.length > 0 && (
+                      <div className="mt-4 grid grid-cols-3 gap-3">
+                        {additionalPreviews.map((previewImg, index) => (
+                          <div key={index} className="relative">
+                            <img
+                              src={previewImg}
+                              alt={`Additional preview ${index + 1}`}
+                              className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeAdditionalImage(index)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Submit Buttons - Mobile Optimized */}
+            <div className="pt-6 lg:pt-8 border-t border-gray-200 mt-6 lg:mt-8">
+              <div className="flex flex-col sm:flex-row justify-center gap-3 lg:gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (formData.name || formData.image || formData.cate_id) {
+                      Swal.fire({
+                        title: 'Unsaved Changes',
+                        text: 'You have unsaved changes. Are you sure you want to leave?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#3085d6',
+                        confirmButtonText: 'Yes, leave',
+                        cancelButtonText: 'Stay'
+                      }).then((result) => {
+                        if (result.isConfirmed) {
+                          navigate('/admin/products');
+                        }
+                      });
+                    } else {
+                      navigate('/admin/products');
+                    }
+                  }}
+                  className="px-6 lg:px-8 py-3 text-sm lg:text-base border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 font-medium"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || categories.length === 0}
+                  className="flex items-center justify-center gap-2 lg:gap-3 px-6 lg:px-8 py-3 text-sm lg:text-base bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-300 shadow-lg hover:shadow-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 lg:w-5 lg:h-5" />
+                      Save Product
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="text-center text-xs lg:text-sm text-gray-500 mt-3 lg:mt-4">
+                Fields marked with <span className="text-red-500">*</span> are required
+              </p>
+            </div>
+          </form>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+};
+
+export default AddProduct;

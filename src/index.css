@@ -1,0 +1,32 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  body {
+    @apply bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+    transition: background-color 0.3s ease;
+  }
+}
+
+@layer components {
+  .glass-effect {
+    @apply backdrop-blur-sm bg-white/80 dark:bg-gray-900/80;
+  }
+  
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 to-purple-600 bg-clip-text text-transparent;
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+  }
+}
+/* @media (min-width: 768px) {
+    .md\:py-32 {
+        padding-top: 4rem;
+        padding-bottom: 10rem;
+    }        
+    } */
+     
+    
