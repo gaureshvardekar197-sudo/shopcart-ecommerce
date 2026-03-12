@@ -1,4 +1,5 @@
 <?php
+// database/migrations/[timestamp]_create_carts_table.php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -18,12 +19,17 @@ return new class extends Migration {
                 ->constrained()
                 ->onDelete('cascade');
 
+            $table->foreignId('size_id')
+                ->nullable()
+                ->constrained('product_sizes')
+                ->onDelete('set null');
+
             $table->integer('quantity')->default(1);
 
             $table->timestamps();
 
-            // Prevent duplicate product per user
-            $table->unique(['user_id', 'product_id']);
+            // New unique constraint: same product with different sizes allowed
+            $table->unique(['user_id', 'product_id', 'size_id'], 'cart_user_product_size_unique');
         });
     }
 

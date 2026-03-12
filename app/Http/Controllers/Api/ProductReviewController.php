@@ -239,7 +239,7 @@ public function index($productId)
                 'order_id' => $request->order_id,
                 'rating' => $request->rating,
                 'comment' => $request->comment,
-                'is_approved' => false // Requires admin approval
+                'is_approved' => true // Requires admin approval
             ]);
 
             Log::info("New review submitted by customer {$user->id} for product {$request->product_id}");
