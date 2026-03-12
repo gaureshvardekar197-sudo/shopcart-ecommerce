@@ -12,11 +12,13 @@ import {
   RefreshCw,
   Check,
   X,
-  Edit
+  Edit,
+  Ruler
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getProduct, updateProduct } from '../../../API/api-products';
 import { getCategories } from '../../../API/api-categories';
+import sizeApi from '../../../API/api-Product_sizes';
 import Swal from 'sweetalert2';
 
 const EditProduct = () => {
@@ -25,6 +27,17 @@ const EditProduct = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [categories, setCategories] = useState([]);
+  
+  // Size related states
+  const [hasSizes, setHasSizes] = useState(false);
+  const [sizeCategory, setSizeCategory] = useState('clothing');
+  const [sizeOptions, setSizeOptions] = useState({});
+  const [selectedSizes, setSelectedSizes] = useState([]);
+  const [sizeStocks, setSizeStocks] = useState({});
+  const [sizePrices, setSizePrices] = useState({});
+  const [existingSizes, setExistingSizes] = useState([]);
+  const [showSizeSection, setShowSizeSection] = useState(false);
+
   const [formData, setFormData] = useState({
     cate_id: '',
     name: '',
@@ -48,11 +61,12 @@ const EditProduct = () => {
   const [preview, setPreview] = useState(null);
   const [additionalPreviews, setAdditionalPreviews] = useState([]);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
-  const [imagesToRemove, setImagesToRemove] = useState([]); // Track images to delete
+  const [imagesToRemove, setImagesToRemove] = useState([]);
 
-  // Fetch categories
+  // Fetch categories and size options
   useEffect(() => {
     fetchCategories();
+    fetchSizeOptions();
   }, []);
 
   const fetchCategories = async () => {
@@ -62,7 +76,6 @@ const EditProduct = () => {
 
       const response = await getCategories(token);
       if (response && response.data) {
-        // Filter only active categories
         const activeCategories = response.data.filter(
           category => category.status === 1 || category.status === true
         );
@@ -70,6 +83,17 @@ const EditProduct = () => {
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
+    }
+  };
+
+  const fetchSizeOptions = async () => {
+    try {
+      const response = await sizeApi.getSizeOptions();
+      if (response.status) {
+        setSizeOptions(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching size options:', error);
     }
   };
 
@@ -99,7 +123,7 @@ const EditProduct = () => {
       
       let productData = response.data || response;
       
-      // Parse product_images if it's a JSON string
+      // Parse product_images
       let existingImages = [];
       if (productData.product_images) {
         if (typeof productData.product_images === 'string') {
@@ -111,6 +135,38 @@ const EditProduct = () => {
         } else if (Array.isArray(productData.product_images)) {
           existingImages = productData.product_images;
         }
+      }
+
+      // Check if product has sizes
+      const hasSizesData = productData.sizes && productData.sizes.length > 0;
+      setHasSizes(hasSizesData);
+      setShowSizeSection(hasSizesData);
+
+      // If has sizes, set size data
+      if (hasSizesData && productData.sizes) {
+        setExistingSizes(productData.sizes);
+        
+        // Determine size category from first size
+        if (productData.sizes[0]?.size_category) {
+          setSizeCategory(productData.sizes[0].size_category);
+        }
+
+        // Populate selected sizes and stocks/prices
+        const sizes = [];
+        const stocks = {};
+        const prices = {};
+        
+        productData.sizes.forEach(size => {
+          sizes.push(size.size);
+          stocks[size.size] = size.stock || 0;
+          if (size.price && parseFloat(size.price) !== parseFloat(productData.selling_price)) {
+            prices[size.size] = size.price;
+          }
+        });
+        
+        setSelectedSizes(sizes);
+        setSizeStocks(stocks);
+        setSizePrices(prices);
       }
       
       setFormData({
@@ -177,7 +233,6 @@ const EditProduct = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Validate file size (5MB max)
       if (file.size > 5 * 1024 * 1024) {
         Swal.fire({
           icon: 'error',
@@ -188,7 +243,6 @@ const EditProduct = () => {
         return;
       }
 
-      // Validate file type
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedTypes.includes(file.type)) {
         Swal.fire({
@@ -221,7 +275,6 @@ const EditProduct = () => {
       return;
     }
 
-    // Validate each file
     for (const file of files) {
       if (file.size > 5 * 1024 * 1024) {
         Swal.fire({
@@ -245,7 +298,6 @@ const EditProduct = () => {
       }
     }
 
-    // Create previews for new files
     files.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -269,31 +321,23 @@ const EditProduct = () => {
     const totalExisting = formData.existing_product_images.length;
     
     if (index < totalExisting) {
-      // This is an existing image
       const imageToRemove = formData.existing_product_images[index];
-      
-      // Add to removal list
       setImagesToRemove(prev => [...prev, imageToRemove]);
       
-      // Remove from existing_product_images
       const newExistingImages = [...formData.existing_product_images];
       newExistingImages.splice(index, 1);
       setFormData(prev => ({ ...prev, existing_product_images: newExistingImages }));
       
-      // Remove from previews
       const newPreviews = [...additionalPreviews];
       newPreviews.splice(index, 1);
       setAdditionalPreviews(newPreviews);
     } else {
-      // This is a newly uploaded image
       const newImageIndex = index - totalExisting;
       
-      // Remove from product_images
       const newFiles = [...formData.product_images];
       newFiles.splice(newImageIndex, 1);
       setFormData(prev => ({ ...prev, product_images: newFiles }));
       
-      // Remove from previews
       const newPreviews = [...additionalPreviews];
       newPreviews.splice(index, 1);
       setAdditionalPreviews(newPreviews);
@@ -327,6 +371,55 @@ const EditProduct = () => {
 
   const handleManualSlugRegenerate = () => {
     generateSlug();
+  };
+
+  // Size Management Functions
+  const handleSizeToggle = (e) => {
+    const checked = e.target.checked;
+    setHasSizes(checked);
+    setShowSizeSection(checked);
+    if (!checked) {
+      setSelectedSizes([]);
+      setSizeStocks({});
+      setSizePrices({});
+    }
+  };
+
+  const handleSizeSelect = (size) => {
+    if (selectedSizes.includes(size)) {
+      setSelectedSizes(selectedSizes.filter(s => s !== size));
+      const newStocks = { ...sizeStocks };
+      const newPrices = { ...sizePrices };
+      delete newStocks[size];
+      delete newPrices[size];
+      setSizeStocks(newStocks);
+      setSizePrices(newPrices);
+    } else {
+      setSelectedSizes([...selectedSizes, size]);
+      setSizeStocks({ ...sizeStocks, [size]: 0 });
+      
+      if (formData.selling_price) {
+        setSizePrices({ ...sizePrices, [size]: formData.selling_price });
+      }
+    }
+  };
+
+  const handleSizeStockChange = (size, value) => {
+    setSizeStocks({
+      ...sizeStocks,
+      [size]: parseInt(value) || 0
+    });
+  };
+
+  const handleSizePriceChange = (size, value) => {
+    setSizePrices({
+      ...sizePrices,
+      [size]: parseFloat(value) || 0
+    });
+  };
+
+  const calculateTotalStock = () => {
+    return Object.values(sizeStocks).reduce((sum, stock) => sum + (stock || 0), 0);
   };
 
   const handleSubmit = async (e) => {
@@ -365,7 +458,9 @@ const EditProduct = () => {
       });
       return;
     }
-    if (!formData.qty) {
+    
+    // Validate quantity or sizes
+    if (!hasSizes && !formData.qty) {
       Swal.fire({
         icon: 'error',
         title: 'Validation Error',
@@ -373,6 +468,29 @@ const EditProduct = () => {
       });
       return;
     }
+
+    if (hasSizes && selectedSizes.length === 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Please select at least one size'
+      });
+      return;
+    }
+
+    if (hasSizes) {
+      for (const size of selectedSizes) {
+        if (!sizeStocks[size] || sizeStocks[size] <= 0) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Validation Error',
+            text: `Please enter stock for size ${size}`
+          });
+          return;
+        }
+      }
+    }
+
     if (!formData.description.trim()) {
       Swal.fire({
         icon: 'error',
@@ -385,7 +503,6 @@ const EditProduct = () => {
     try {
       setIsSaving(true);
       
-      // Show loading
       Swal.fire({
         title: 'Updating Product',
         html: 'Please wait...',
@@ -408,19 +525,37 @@ const EditProduct = () => {
 
       const formPayload = new FormData();
       
-      // Append all fields as strings
+      // Append all fields
       formPayload.append('cate_id', String(formData.cate_id));
       formPayload.append('name', formData.name.trim());
       formPayload.append('slug', formData.slug || '');
       formPayload.append('original_price', String(formData.original_price));
       formPayload.append('selling_price', String(formData.selling_price));
-      formPayload.append('qty', String(formData.qty));
+      
+      // Handle sizes
+      if (hasSizes) {
+        formPayload.append('has_sizes', '1');
+        formPayload.append('size_category', sizeCategory);
+        formPayload.append('selected_sizes', JSON.stringify(selectedSizes));
+        formPayload.append('size_stocks', JSON.stringify(selectedSizes.map(size => sizeStocks[size] || 0)));
+        
+        const prices = selectedSizes.map(size => {
+          const price = sizePrices[size];
+          return price && parseFloat(price) !== parseFloat(formData.selling_price) ? price : null;
+        });
+        
+        if (prices.some(p => p !== null)) {
+          formPayload.append('size_prices', JSON.stringify(prices));
+        }
+      } else {
+        formPayload.append('has_sizes', '0');
+        formPayload.append('qty', String(formData.qty));
+      }
       
       if (formData.tax) {
         formPayload.append('tax', String(formData.tax));
       }
       
-      // Convert boolean to string '1' or '0'
       formPayload.append('status', formData.status ? '1' : '0');
       formPayload.append('trending', formData.trending ? '1' : '0');
       
@@ -442,34 +577,29 @@ const EditProduct = () => {
         formPayload.append('meta_description', formData.meta_description);
       }
       
-      // Append main image if new one is selected
+      // Handle images
       if (formData.image) {
         formPayload.append('image', formData.image);
       }
       
-      // Send the current existing images (ones that weren't removed)
       if (formData.existing_product_images && formData.existing_product_images.length > 0) {
         formPayload.append('existing_images', JSON.stringify(formData.existing_product_images));
       } else {
         formPayload.append('existing_images', JSON.stringify([]));
       }
       
-      // Send list of images to remove
       if (imagesToRemove && imagesToRemove.length > 0) {
         formPayload.append('images_to_remove', JSON.stringify(imagesToRemove));
       }
       
-      // Append new additional images
       if (formData.product_images && formData.product_images.length > 0) {
         formData.product_images.forEach(file => {
           formPayload.append('product_images[]', file);
         });
       }
 
-      // Add _method field for Laravel to handle as PUT
       formPayload.append('_method', 'PUT');
 
-      // Log FormData for debugging
       console.log('Sending FormData:');
       for (let pair of formPayload.entries()) {
         if (pair[0].includes('image') && pair[1] instanceof File) {
@@ -479,7 +609,6 @@ const EditProduct = () => {
         }
       }
 
-      // Call API
       const response = await updateProduct(token, id, formPayload);
       
       Swal.close();
@@ -504,7 +633,6 @@ const EditProduct = () => {
       
       Swal.close();
       
-      // Show validation errors
       if (error.response?.status === 422) {
         const errors = error.response.data.errors;
         const errorMessages = Object.values(errors).flat().join('\n');
@@ -733,22 +861,45 @@ const EditProduct = () => {
                     </div>
                   </div>
 
-                  {/* Quantity */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Quantity <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      name="qty"
-                      value={formData.qty}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                      placeholder="Enter quantity"
-                      min="0"
-                    />
+                  {/* Size Toggle */}
+                  <div className="md:col-span-2">
+                    <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="hasSizes"
+                        checked={hasSizes}
+                        onChange={handleSizeToggle}
+                        className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <div>
+                        <label htmlFor="hasSizes" className="text-sm font-semibold text-gray-700 cursor-pointer">
+                          This product has sizes (Clothing, Shoes, etc.)
+                        </label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Enable size variants for this product
+                        </p>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Quantity - Only show if no sizes */}
+                  {!hasSizes && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Quantity <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        name="qty"
+                        value={formData.qty}
+                        onChange={handleInputChange}
+                        required={!hasSizes}
+                        className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Enter quantity"
+                        min="0"
+                      />
+                    </div>
+                  )}
 
                   {/* Tax */}
                   <div>
@@ -774,6 +925,160 @@ const EditProduct = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Size Management Section */}
+              {showSizeSection && (
+                <div className="space-y-4 lg:space-y-6">
+                  <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Ruler className="w-5 h-5 lg:w-6 lg:h-6 text-purple-600" />
+                    </div>
+                    <h2 className="text-base lg:text-lg font-bold text-gray-800">Size Management</h2>
+                  </div>
+
+                  {/* Size Category Selection */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Size Category
+                    </label>
+                    <select
+                      value={sizeCategory}
+                      onChange={(e) => setSizeCategory(e.target.value)}
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                    >
+                      <option value="clothing">Clothing Sizes (XS, S, M, L, XL, XXL)</option>
+                      <option value="shoes">Shoe Sizes (36-46)</option>
+                      <option value="kids">Kids Sizes (2T-12T)</option>
+                      <option value="numeric">Numeric Sizes (0-12)</option>
+                    </select>
+                  </div>
+
+                  {/* Available Sizes */}
+                  {sizeOptions[sizeCategory] && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Available Sizes
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {sizeOptions[sizeCategory]?.sizes?.map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => handleSizeSelect(size)}
+                            className={`
+                              px-4 py-2 text-sm font-medium rounded-lg border transition-all
+                              ${selectedSizes.includes(size)
+                                ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                              }
+                            `}
+                          >
+                            {size}
+                            {selectedSizes.includes(size) && (
+                              <Check className="inline-block w-3 h-3 ml-1" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Selected Sizes with Stock and Price */}
+                  {selectedSizes.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Configure Sizes
+                      </label>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-xl">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock *</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price (Optional)</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {selectedSizes.map((size) => (
+                              <tr key={size}>
+                                <td className="px-4 py-3">
+                                  <span className="font-medium text-gray-900">{size}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="number"
+                                    value={sizeStocks[size] || ''}
+                                    onChange={(e) => handleSizeStockChange(size, e.target.value)}
+                                    className="w-24 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    placeholder="Stock"
+                                    min="0"
+                                    required
+                                  />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="relative">
+                                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                                      ₹
+                                    </div>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={sizePrices[size] || ''}
+                                      onChange={(e) => handleSizePriceChange(size, e.target.value)}
+                                      className="w-32 pl-8 pr-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                      placeholder={formData.selling_price}
+                                      min="0"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSizeSelect(size)}
+                                    className="text-red-600 hover:text-red-800"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50">
+                            <tr>
+                              <td className="px-4 py-3 font-medium">Total</td>
+                              <td className="px-4 py-3 font-medium">
+                                {calculateTotalStock()} units
+                              </td>
+                              <td className="px-4 py-3" colSpan="2"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        * Stock is required for each size. Leave price empty to use base selling price (₹{formData.selling_price || '0'})
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Existing Sizes Summary */}
+                  {existingSizes.length > 0 && (
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <p className="text-sm text-blue-700 font-medium mb-2">Existing Sizes:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {existingSizes.map((size, index) => (
+                          <span key={index} className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full">
+                            {size.size} (Stock: {size.stock})
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-xs text-blue-600 mt-2">
+                        Note: Updating sizes will replace all existing size configurations
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Status & Trending */}
               <div className="space-y-4 lg:space-y-6">

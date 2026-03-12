@@ -1,13 +1,5 @@
 // api-Order.jsx
-import axios from 'axios';
-
-const API_URL = "http://localhost:8000/api";
-
-// Get auth token
-const getAuthHeader = () => {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
+import api from "./axios"; // Import the configured axios instance
 
 // ==========================
 // USER ORDER APIs
@@ -16,15 +8,11 @@ const getAuthHeader = () => {
 // Get user's orders
 export const getMyOrders = async () => {
   try {
-    const response = await axios.get(`${API_URL}/orders`, {
-      headers: getAuthHeader()
-    });
-    console.log('getMyOrders raw response:', response);
+    const response = await api.get('/orders');
+    console.log('getMyOrders response:', response);
     return response.data;
   } catch (error) {
     console.error('Error fetching orders:', error);
-    console.error('Error response:', error.response?.data);
-    console.error('Error status:', error.response?.status);
     throw error;
   }
 };
@@ -32,9 +20,7 @@ export const getMyOrders = async () => {
 // Get single order by ID
 export const getOrderById = async (orderId) => {
   try {
-    const response = await axios.get(`${API_URL}/orders/${orderId}`, {
-      headers: getAuthHeader()
-    });
+    const response = await api.get(`/orders/${orderId}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching order:', error);
@@ -45,12 +31,7 @@ export const getOrderById = async (orderId) => {
 // Place new order
 export const placeOrder = async (orderData) => {
   try {
-    const response = await axios.post(`${API_URL}/orders`, orderData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await api.post('/orders', orderData);
     return response.data;
   } catch (error) {
     console.error('Error placing order:', error);
@@ -62,26 +43,14 @@ export const placeOrder = async (orderData) => {
 // ADMIN ORDER APIs
 // ==========================
 
-// Get all orders (Admin only) - FIXED VERSION
+// Get all orders (Admin only)
 export const getAllOrders = async () => {
   try {
-    const response = await axios.get(`${API_URL}/admin/orders`, {
-      headers: getAuthHeader()
-    });
-    
-    console.log('===== ADMIN ORDERS API DEBUG =====');
-    console.log('Full response:', response);
-    console.log('Response data:', response.data);
-    console.log('Response status:', response.status);
-    console.log('Response headers:', response.headers);
-    console.log('==================================');
-    
+    const response = await api.get('/admin/orders');
+    console.log('Admin orders response:', response);
     return response.data;
   } catch (error) {
     console.error('Error fetching all orders:', error);
-    console.error('Error response:', error.response?.data);
-    console.error('Error status:', error.response?.status);
-    console.error('Error headers:', error.response?.headers);
     throw error;
   }
 };
@@ -89,9 +58,7 @@ export const getAllOrders = async () => {
 // Get single order details (Admin only)
 export const getAdminOrderById = async (orderId) => {
   try {
-    const response = await axios.get(`${API_URL}/admin/orders/${orderId}`, {
-      headers: getAuthHeader()
-    });
+    const response = await api.get(`/admin/orders/${orderId}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching order details:', error);
@@ -102,10 +69,7 @@ export const getAdminOrderById = async (orderId) => {
 // Update order status (Admin only)
 export const updateOrderStatus = async (orderId, status) => {
   try {
-    const response = await axios.put(`${API_URL}/admin/orders/${orderId}/status`, 
-      { status },
-      { headers: getAuthHeader() }
-    );
+    const response = await api.put(`/admin/orders/${orderId}/status`, { status });
     return response.data;
   } catch (error) {
     console.error('Error updating order status:', error);
@@ -116,9 +80,7 @@ export const updateOrderStatus = async (orderId, status) => {
 // Delete order (Admin only)
 export const deleteOrder = async (orderId) => {
   try {
-    const response = await axios.delete(`${API_URL}/admin/orders/${orderId}`, {
-      headers: getAuthHeader()
-    });
+    const response = await api.delete(`/admin/orders/${orderId}`);
     return response.data;
   } catch (error) {
     console.error('Error deleting order:', error);

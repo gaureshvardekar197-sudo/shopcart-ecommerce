@@ -4,6 +4,7 @@ import Container from "../layout/Container";
 import { getProducts } from "../API/api-products";
 import { getWishlist, addToWishlist, removeFromWishlist } from "../API/api-wishlist";
 import { addToCart as apiAddToCart } from "../API/api-cart";
+import sizeApi from "../API/api-Product_sizes";
 import { HeartIcon, ShoppingCartIcon } from "@heroicons/react/24/outline";
 import { HeartIcon as HeartIconSolid } from "@heroicons/react/24/solid";
 import { toast } from "react-toastify";
@@ -22,6 +23,7 @@ export default function CategoryProducts() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userRole, setUserRole] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [addingToCart, setAddingToCart] = useState({});
 
   useEffect(() => {
     checkAuth();
@@ -35,6 +37,13 @@ export default function CategoryProducts() {
       window.removeEventListener('logout', handleLogout);
     };
   }, [categorySlug]);
+
+  // Add this useEffect to load wishlist when authentication changes
+  useEffect(() => {
+    if (isAuthenticated !== undefined) {
+      loadWishlist();
+    }
+  }, [isAuthenticated]);
 
   const checkAuth = () => {
     const token = localStorage.getItem('token');
@@ -76,7 +85,13 @@ export default function CategoryProducts() {
       const savedWishlist = localStorage.getItem("wishlist");
       if (savedWishlist) {
         try {
-          setWishlist(JSON.parse(savedWishlist));
+          const parsed = JSON.parse(savedWishlist);
+          setWishlist(parsed);
+          
+          // Dispatch event for navbar on initial load
+          window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+            detail: { count: parsed.length } 
+          }));
         } catch (error) {
           console.error('Error parsing wishlist:', error);
           setWishlist([]);
@@ -87,18 +102,39 @@ export default function CategoryProducts() {
 
     try {
       const response = await getWishlist();
+      let wishlistData = [];
+      
       if (response && response.data && Array.isArray(response.data)) {
-        setWishlist(response.data);
+        wishlistData = response.data;
       } else if (Array.isArray(response)) {
-        setWishlist(response);
-      } else {
-        setWishlist([]);
+        wishlistData = response;
       }
+      
+      setWishlist(wishlistData);
+      
+      // Update localStorage
+      localStorage.setItem('wishlist', JSON.stringify(wishlistData));
+      
+      // Dispatch event for navbar
+      window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+        detail: { count: wishlistData.length } 
+      }));
     } catch (error) {
       console.error('Error loading wishlist:', error);
       const savedWishlist = localStorage.getItem("wishlist");
       if (savedWishlist) {
-        setWishlist(JSON.parse(savedWishlist));
+        try {
+          const parsed = JSON.parse(savedWishlist);
+          setWishlist(parsed);
+          
+          // Dispatch event for navbar
+          window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+            detail: { count: parsed.length } 
+          }));
+        } catch (parseError) {
+          console.error('Error parsing wishlist:', parseError);
+          setWishlist([]);
+        }
       }
     }
   };
@@ -121,7 +157,25 @@ export default function CategoryProducts() {
         return false;
       });
 
-      setProducts(filtered);
+      // Fetch sizes for each product
+      const productsWithSizes = await Promise.all(
+        filtered.map(async (product) => {
+          try {
+            const sizesResponse = await sizeApi.getProductSizes(product.id);
+            if (sizesResponse?.data?.sizes) {
+              return {
+                ...product,
+                sizes: sizesResponse.data.sizes
+              };
+            }
+          } catch (error) {
+            console.error(`Error fetching sizes for product ${product.id}:`, error);
+          }
+          return product;
+        })
+      );
+
+      setProducts(productsWithSizes);
 
       if (filtered.length > 0) {
         setCategoryName(
@@ -159,7 +213,7 @@ export default function CategoryProducts() {
   };
 
   const getOriginalPrice = (product) => {
-    if (!product) return null;
+    if (!product) return 0;
     
     const possibleFields = [
       'original_price', 'mrp', 'compare_at_price', 'regular_price',
@@ -173,23 +227,85 @@ export default function CategoryProducts() {
         return Number(value);
       }
     }
+    return 0;
+  };
+
+  // Get default size price for a product
+  const getDefaultSizePrice = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0];
+      return defaultSize?.selling_price || defaultSize?.price || product.selling_price || product.price || 0;
+    }
+    return product.selling_price || product.price || 0;
+  };
+
+  // Get default size original price - FIXED
+  const getDefaultSizeOriginalPrice = (product) => {
+    // First check if product has sizes
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0];
+      
+      // Check size-specific original price
+      if (defaultSize?.original_price && defaultSize.original_price > 0) {
+        return Number(defaultSize.original_price);
+      }
+      if (defaultSize?.effective_original_price && defaultSize.effective_original_price > 0) {
+        return Number(defaultSize.effective_original_price);
+      }
+    }
+    
+    // If no size original price, get product's original price
+    const productOriginalPrice = getOriginalPrice(product);
+    if (productOriginalPrice && productOriginalPrice > 0) {
+      return Number(productOriginalPrice);
+    }
+    
+    // No original price found
+    return 0;
+  };
+
+  // Calculate discount based on default size - FIXED
+  const calculateDefaultSizeDiscount = (product) => {
+    const price = getDefaultSizePrice(product);
+    const originalPrice = getDefaultSizeOriginalPrice(product);
+    
+    // Only calculate discount if original price exists and is greater than selling price
+    if (originalPrice && originalPrice > 0 && originalPrice > price) {
+      return Math.round(((originalPrice - price) / originalPrice) * 100);
+    }
+    return 0;
+  };
+
+  // Check stock based on default size
+  const isDefaultSizeInStock = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0];
+      return defaultSize?.stock > 0;
+    }
+    return (product.stock > 0 || product.qty > 0);
+  };
+
+  // Get default size name
+  const getDefaultSizeName = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0];
+      return defaultSize?.size || null;
+    }
     return null;
   };
 
-  const calculateDiscount = (product) => {
-    const price = Number(product.selling_price || product.price || 0);
-    const originalPrice = getOriginalPrice(product);
-    
-    if (!originalPrice || originalPrice <= price) return null;
-    return Math.round(((originalPrice - price) / originalPrice) * 100);
+  // Check if product has multiple sizes
+  const hasMultipleSizes = (product) => {
+    return product?.sizes && product.sizes.length > 1;
   };
 
   const formatCurrency = (value) => {
+    const numValue = Number(value) || 0;
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
       maximumFractionDigits: 0,
-    }).format(value || 0);
+    }).format(numValue);
   };
 
   // Handle wishlist toggle with login redirect
@@ -197,7 +313,6 @@ export default function CategoryProducts() {
     e.preventDefault();
     e.stopPropagation();
 
-    // Check if user is not logged in
     if (!isAuthenticated) {
       toast.warning('🔐 Please login to add items to wishlist', {
         position: "top-right",
@@ -211,7 +326,6 @@ export default function CategoryProducts() {
       return;
     }
 
-    // Check if user is admin (role 1)
     if (isAdmin) {
       toast.info('👑 Admin: You cannot add to wishlist', {
         position: "top-right",
@@ -221,12 +335,22 @@ export default function CategoryProducts() {
       return;
     }
 
-    const isInWishlist = wishlist.some(item => item.id === product.id);
-    let updatedWishlist;
+    // Get the default size from the product
+    const defaultSize = product?.sizes?.[0];
+    
+    // Check if in wishlist (considering size)
+    const isInWishlist = wishlist.some(item => {
+      if (item.id !== product.id) return false;
+      
+      if (item.pivot?.size_id || item.selected_size_id) {
+        return item.pivot?.size_id === defaultSize?.id || item.selected_size_id === defaultSize?.id;
+      }
+      return false;
+    });
 
     try {
       if (isInWishlist) {
-        const response = await removeFromWishlist(product.id);
+        const response = await removeFromWishlist(product.id, defaultSize?.id);
         
         if (response && response.is_admin_error) {
           toast.info('👑 Admin: You cannot modify wishlist', {
@@ -237,10 +361,25 @@ export default function CategoryProducts() {
           return;
         }
         
-        updatedWishlist = wishlist.filter(item => item.id !== product.id);
-        toast.success(`❤️ ${product.name} removed from wishlist`);
+        const updatedWishlist = wishlist.filter(item => {
+          if (item.id !== product.id) return true;
+          if (defaultSize?.id) {
+            return item.pivot?.size_id !== defaultSize?.id && item.selected_size_id !== defaultSize?.id;
+          }
+          return false;
+        });
+        
+        setWishlist(updatedWishlist);
+        localStorage.setItem('wishlist', JSON.stringify(updatedWishlist));
+        
+        // Dispatch event for navbar
+        window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+          detail: { count: updatedWishlist.length } 
+        }));
+        
+        toast.success(`❤️ ${product.name}${defaultSize?.size ? ` (Size: ${defaultSize.size})` : ''} removed from wishlist`);
       } else {
-        const response = await addToWishlist(product.id);
+        const response = await addToWishlist(product.id, defaultSize?.size, defaultSize?.id);
         
         if (response && response.is_admin_error) {
           toast.info('👑 Admin: You cannot add to wishlist', {
@@ -251,19 +390,19 @@ export default function CategoryProducts() {
           return;
         }
         
-        if (response && response.data) {
-          updatedWishlist = [...wishlist, response.data];
-        } else {
-          updatedWishlist = [...wishlist, product];
-        }
-        toast.success(`❤️ ${product.name} added to wishlist`);
+        // Fetch updated wishlist
+        const wishlistResponse = await getWishlist();
+        const wishlistData = wishlistResponse?.data || wishlistResponse || [];
+        setWishlist(wishlistData);
+        localStorage.setItem('wishlist', JSON.stringify(wishlistData));
+        
+        // Dispatch event for navbar
+        window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+          detail: { count: wishlistData.length } 
+        }));
+        
+        toast.success(`❤️ ${product.name}${defaultSize?.size ? ` (Size: ${defaultSize.size})` : ''} added to wishlist`);
       }
-
-      setWishlist(updatedWishlist);
-      
-      window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
-        detail: { count: updatedWishlist.length } 
-      }));
     } catch (error) {
       console.error('Wishlist error:', error);
       
@@ -274,10 +413,7 @@ export default function CategoryProducts() {
           icon: "👑"
         });
       } else if (error.response?.status === 401) {
-        toast.error('Session expired. Please login again.', {
-          onClick: () => window.location.href = '/login'
-        });
-        
+        toast.error('Session expired. Please login again.');
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setIsAuthenticated(false);
@@ -289,14 +425,13 @@ export default function CategoryProducts() {
     }
   };
 
-  // Handle add to cart with login redirect
+  // Handle add to cart with login redirect and size info
   const addToCart = async (product, e) => {
     e.preventDefault();
     e.stopPropagation();
     
     console.log('Adding to cart:', product);
 
-    // Check if user is not logged in
     if (!isAuthenticated) {
       toast.warning('🛒 Please login to add items to cart', {
         position: "top-right",
@@ -310,7 +445,6 @@ export default function CategoryProducts() {
       return;
     }
 
-    // Check if user is admin (role 1)
     if (isAdmin) {
       toast.info('👑 Admin: You cannot add to cart', {
         position: "top-right",
@@ -320,79 +454,16 @@ export default function CategoryProducts() {
       return;
     }
     
-    if (!isAuthenticated) {
-      // Handle non-authenticated users with localStorage
-      try {
-        const savedCart = localStorage.getItem('cart');
-        let currentCart = savedCart ? JSON.parse(savedCart) : [];
-        
-        if (!Array.isArray(currentCart)) {
-          currentCart = [];
-        }
-        
-        const cartProduct = {
-          id: product.id,
-          name: product.name || 'Product',
-          price: Number(product.price) || 0,
-          selling_price: Number(product.selling_price || product.price) || 0,
-          original_price: Number(getOriginalPrice(product)) || Number(product.price) || 0,
-          quantity: 1,
-          stock: Number(product.stock || product.qty) || 10,
-          image: product.image,
-          image_url: product.image_url,
-          category: product.category,
-          category_name: product.category?.name || product.category_name || 'Uncategorized'
-        };
-        
-        console.log('Cart product prepared:', cartProduct);
-        
-        const existingProductIndex = currentCart.findIndex(item => item.id === product.id);
-        
-        if (existingProductIndex !== -1) {
-          currentCart[existingProductIndex] = {
-            ...currentCart[existingProductIndex],
-            quantity: (currentCart[existingProductIndex].quantity || 1) + 1
-          };
-          toast.success(`🛒 ${product.name} quantity updated in cart`);
-        } else {
-          currentCart.push(cartProduct);
-          toast.success(`🛒 ${product.name} added to cart`);
-        }
-        
-        const totalItems = currentCart.reduce((sum, item) => sum + (item.quantity || 1), 0);
-        
-        localStorage.setItem('cart', JSON.stringify(currentCart));
-        console.log('Cart saved to localStorage:', currentCart);
-        console.log('Total items:', totalItems);
-        
-        window.dispatchEvent(new CustomEvent('cartUpdated', { 
-          detail: { 
-            count: totalItems,
-            cart: currentCart,
-            productId: product.id,
-            action: 'add'
-          } 
-        }));
-        
-        window.dispatchEvent(new Event('storage'));
-        
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('refreshCart', { 
-            detail: { timestamp: Date.now() } 
-          }));
-        }, 50);
-        
-      } catch (error) {
-        console.error('Error adding to cart:', error);
-        toast.error('Failed to add to cart');
-      }
-      return;
-    }
-
-    // Handle authenticated users with API
+    setAddingToCart(prev => ({ ...prev, [product.id]: true }));
+    
+    // Get the default size from the product
+    const defaultSize = product?.sizes?.[0];
+    const sizeId = defaultSize?.id || null;
+    const sizeName = defaultSize?.size || null;
+    
     try {
-      console.log('Adding to cart via API:', product.id);
-      const response = await apiAddToCart(product.id, 1);
+      console.log('Adding to cart via API:', product.id, 'Size:', sizeName, 'Size ID:', sizeId);
+      const response = await apiAddToCart(product.id, 1, sizeName, sizeId);
       console.log('API Response:', response);
       
       if (response && response.is_admin_error) {
@@ -405,25 +476,43 @@ export default function CategoryProducts() {
       }
       
       if (response && response.status === true) {
-        toast.success(`🛒 ${product.name} added to cart`);
+        toast.success(`🛒 ${product.name}${sizeName ? ` (Size: ${sizeName})` : ''} added to cart`);
         
-        const savedCart = localStorage.getItem('cart');
-        let currentCart = savedCart ? JSON.parse(savedCart) : [];
-        const totalItems = currentCart.reduce((sum, item) => sum + (item.quantity || 1), 0) + 1;
-        
-        window.dispatchEvent(new CustomEvent('cartUpdated', { 
-          detail: { 
-            count: totalItems,
-            productId: product.id, 
-            action: 'add'
-          } 
-        }));
-        
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('refreshCart', { 
-            detail: { timestamp: Date.now() } 
+        // Fetch updated cart
+        try {
+          const { getCart } = await import('../API/api-cart');
+          const cartResponse = await getCart();
+          
+          if (cartResponse?.data) {
+            let cartData = [];
+            if (Array.isArray(cartResponse.data)) {
+              cartData = cartResponse.data;
+            } else if (cartResponse.data.data && Array.isArray(cartResponse.data.data)) {
+              cartData = cartResponse.data.data;
+            }
+            
+            localStorage.setItem('cart', JSON.stringify(cartData));
+            
+            const totalItems = cartData.reduce((sum, item) => sum + (item.quantity || 1), 0);
+            
+            window.dispatchEvent(new CustomEvent('cartUpdated', { 
+              detail: { count: totalItems, cart: cartData } 
+            }));
+          }
+        } catch (cartError) {
+          console.error('Error fetching updated cart:', cartError);
+          
+          // Fallback: increment existing cart count
+          const savedCart = localStorage.getItem('cart');
+          let currentCart = savedCart ? JSON.parse(savedCart) : [];
+          const totalItems = currentCart.reduce((sum, item) => sum + (item.quantity || 1), 0) + 1;
+          
+          window.dispatchEvent(new CustomEvent('cartUpdated', { 
+            detail: { count: totalItems }
           }));
-        }, 100);
+        }
+        
+        window.dispatchEvent(new Event('storage'));
       } else {
         toast.error('Failed to add to cart');
       }
@@ -446,6 +535,8 @@ export default function CategoryProducts() {
       } else {
         toast.error('Failed to add to cart');
       }
+    } finally {
+      setAddingToCart(prev => ({ ...prev, [product.id]: false }));
     }
   };
 
@@ -455,11 +546,11 @@ export default function CategoryProducts() {
     switch(sortBy) {
       case 'price-low':
         return sorted.sort((a, b) => 
-          (a.selling_price || a.price || 0) - (b.selling_price || b.price || 0)
+          getDefaultSizePrice(a) - getDefaultSizePrice(b)
         );
       case 'price-high':
         return sorted.sort((a, b) => 
-          (b.selling_price || b.price || 0) - (a.selling_price || a.price || 0)
+          getDefaultSizePrice(b) - getDefaultSizePrice(a)
         );
       case 'newest':
         return sorted.sort((a, b) => 
@@ -471,6 +562,17 @@ export default function CategoryProducts() {
   };
 
   const displayedProducts = sortProducts(products);
+
+  // Debug log to check values
+  useEffect(() => {
+    displayedProducts.forEach(product => {
+      console.log(`Product: ${product.name}`, {
+        price: getDefaultSizePrice(product),
+        originalPrice: getDefaultSizeOriginalPrice(product),
+        discount: calculateDefaultSizeDiscount(product)
+      });
+    });
+  }, [displayedProducts]);
 
   if (loading) {
     return (
@@ -540,19 +642,22 @@ export default function CategoryProducts() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
               {displayedProducts.map((product) => {
-                const price = product.selling_price || product.price || 0;
-                const originalPrice = getOriginalPrice(product);
-                const discount = calculateDiscount(product);
+                const defaultSizePrice = getDefaultSizePrice(product);
+                const defaultSizeOriginalPrice = getDefaultSizeOriginalPrice(product);
+                const discount = calculateDefaultSizeDiscount(product);
+                const defaultSizeName = getDefaultSizeName(product);
+                const hasSizes = product?.sizes && product.sizes.length > 0;
+                const inStock = isDefaultSizeInStock(product);
                 const isInWishlist = wishlist.some(item => item.id === product.id);
 
                 return (
                   <div
                     key={product.id}
-                    className="group bg-white dark:bg-gray-800 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-100 dark:border-gray-700 hover:-translate-y-1"
+                    className="group bg-white dark:bg-gray-800 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 overflow-hidden border border-gray-100 dark:border-gray-700 hover:-translate-y-1 flex flex-col h-full"
                   >
-                    <Link to={`/products/${product.id}`} className="block">
-                      {/* Image Container */}
-                      <div className="relative h-56 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4">
+                    <Link to={`/products/${product.id}`} className="flex flex-col h-full">
+                      {/* Image Container - Fixed height */}
+                      <div className="relative h-48 sm:h-56 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 flex-shrink-0">
                         <img
                           src={getImageUrl(product)}
                           alt={product.name}
@@ -577,7 +682,7 @@ export default function CategoryProducts() {
                         </button>
 
                         {/* Discount Badge */}
-                        {discount && !isAdmin && (
+                        {discount > 0 && !isAdmin && (
                           <div className="absolute top-3 left-3">
                             <span className="bg-gradient-to-r from-red-500 to-red-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg">
                               {discount}% OFF
@@ -586,29 +691,48 @@ export default function CategoryProducts() {
                         )}
                       </div>
 
-                      {/* Product Info */}
-                      <div className="p-5">
-                        <h3 className="font-semibold text-gray-900 dark:text-white mb-2 line-clamp-2 min-h-[3rem]">
+                      {/* Product Info - Flex grow to fill remaining space */}
+                      <div className="p-5 flex flex-col flex-grow">
+                        <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                          {product.category?.name || 'Uncategorized'}
+                        </span>
+
+                        <h3 className="mt-2 font-semibold text-gray-900 dark:text-white line-clamp-2 min-h-[3rem]">
                           {product.name}
                         </h3>
+
+                        {/* Size Badge - Show if product has sizes */}
+                        {hasSizes && defaultSizeName && (
+                          <div className="">
+                            <span className="hidden">Size:</span>
+                            <span className="hidden">{defaultSizeName}</span>
+                          </div>
+                        )}
 
                         {/* Price Section */}
                         <div className="mb-4">
                           <div className="flex items-baseline gap-2">
                             <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                              {formatCurrency(price)}
+                              {formatCurrency(defaultSizePrice)}
                             </span>
-                            {originalPrice && originalPrice > price && !isAdmin && (
-                              <span className="text-sm text-gray-400 line-through">
-                                {formatCurrency(originalPrice)}
+                            {defaultSizeOriginalPrice > 0 && defaultSizeOriginalPrice > defaultSizePrice && !isAdmin && (
+                              <span className="text-sm text-red-600 line-through">
+                                {formatCurrency(defaultSizeOriginalPrice)}
                               </span>
                             )}
                           </div>
                           
                           {/* Savings Badge */}
-                          {originalPrice && originalPrice > price && !isAdmin && (
+                          {defaultSizeOriginalPrice > 0 && defaultSizeOriginalPrice > defaultSizePrice && !isAdmin && (
                             <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-1">
-                              Save {formatCurrency(originalPrice - price)}
+                              Save {formatCurrency(defaultSizeOriginalPrice - defaultSizePrice)}
+                            </p>
+                          )}
+                          
+                          {/* Multiple sizes indicator */}
+                          {hasMultipleSizes(product) && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              +{product.sizes.length - 1} more sizes available
                             </p>
                           )}
                           
@@ -620,20 +744,37 @@ export default function CategoryProducts() {
                           )}
                         </div>
 
-                        {/* Quick Add Button */}
-                        <button 
-                          className={`w-full py-2.5 rounded-xl font-medium transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 shadow-md ${
-                            isAdmin
-                              ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed'
-                              : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white hover:shadow-lg'
-                          }`}
-                          onClick={(e) => addToCart(product, e)}
-                          disabled={isAdmin}
-                          title={!isAuthenticated ? "Login to add to cart" : (isAdmin ? "Admins cannot add to cart" : "")}
-                        >
-                          <ShoppingCartIcon className="w-5 h-5" />
-                          {!isAuthenticated ? 'Add to Cart' : (isAdmin ? 'Admin View Only' : 'Add to Cart')}
-                        </button>
+                        {/* Add to Cart Button - Auto margin top to push to bottom */}
+                        <div className="mt-auto">
+                          <button 
+                            className={`w-full py-2.5 rounded-xl font-medium transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 shadow-md ${
+                              isAdmin
+                                ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+                                : !inStock
+                                  ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+                                  : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white hover:shadow-lg'
+                            }`}
+                            onClick={(e) => addToCart(product, e)}
+                            disabled={isAdmin || !inStock || addingToCart[product.id]}
+                            title={!isAuthenticated ? "Login to add to cart" : (isAdmin ? "Admins cannot add to cart" : (!inStock ? "Out of Stock" : ""))}
+                          >
+                            {addingToCart[product.id] ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>Adding...</span>
+                              </>
+                            ) : isAdmin ? (
+                              'Admin View Only'
+                            ) : !inStock ? (
+                              'Out of Stock'
+                            ) : (
+                              <>
+                                <ShoppingCartIcon className="w-4 h-4" />
+                                Add to Cart
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </Link>
                   </div>

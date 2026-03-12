@@ -1,6 +1,11 @@
 import api from "./axios";
 
-// Get Wishlist
+/**
+ * Wishlist API Service
+ * Handles all wishlist-related API calls with size support
+ */
+
+// Get user's wishlist with size details
 export const getWishlist = async () => {
   try {
     const response = await api.get("/wishlist");
@@ -8,7 +13,8 @@ export const getWishlist = async () => {
   } catch (error) {
     console.error('Error fetching wishlist:', error);
     
-    if (error.response && error.response.status === 403) {
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
@@ -19,36 +25,41 @@ export const getWishlist = async () => {
       };
     }
     
+    // Re-throw other errors to be handled by the caller
     throw error;
   }
 };
 
-// Add To Wishlist
-export const addToWishlist = async (productId) => {
+// Add product to wishlist with optional size
+export const addToWishlist = async (productId, size = null, sizeId = null) => {
   try {
-    const response = await api.post("/wishlist", {
+    // Build payload with optional size information
+    const payload = {
       product_id: productId,
-    });
+      ...(size && { size }),
+      ...(sizeId && { size_id: sizeId })
+    };
     
+    const response = await api.post("/wishlist", payload);
     console.log('Add to wishlist response:', response.data);
+    
     return response.data;
   } catch (error) {
     console.error('Error adding to wishlist:', error);
     
-    // Handle admin role error (403)
-    if (error.response && error.response.status === 403) {
-      console.log('Admin error caught:', error.response.data);
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
-        message: error.response.data.message || 'Admin cannot add to wishlist - You are checking the website, not making a purchase',
+        message: error.response.data.message || 'Admin cannot add to wishlist',
         role_error: true,
         is_admin_error: true
       };
     }
     
-    // Handle duplicate entry (409)
-    if (error.response && error.response.status === 409) {
+    // Handle 409 Conflict (Duplicate entry)
+    if (error.response?.status === 409) {
       return {
         status: false,
         success: false,
@@ -57,19 +68,35 @@ export const addToWishlist = async (productId) => {
       };
     }
     
+    // Handle validation errors (422)
+    if (error.response?.status === 422) {
+      return {
+        status: false,
+        success: false,
+        message: 'Validation error',
+        errors: error.response.data.errors
+      };
+    }
+    
     throw error;
   }
 };
 
-// Remove From Wishlist
-export const removeFromWishlist = async (productId) => {
+// Remove product from wishlist (with optional sizeId for size-specific removal)
+export const removeFromWishlist = async (productId, sizeId = null) => {
   try {
-    const response = await api.delete(`/wishlist/${productId}`);
+    // Build URL with optional sizeId query parameter
+    const url = sizeId 
+      ? `/wishlist/${productId}?size_id=${sizeId}`
+      : `/wishlist/${productId}`;
+    
+    const response = await api.delete(url);
     return response.data;
   } catch (error) {
     console.error('Error removing from wishlist:', error);
     
-    if (error.response && error.response.status === 403) {
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
@@ -79,11 +106,20 @@ export const removeFromWishlist = async (productId) => {
       };
     }
     
+    // Handle 404 Not Found
+    if (error.response?.status === 404) {
+      return {
+        status: false,
+        success: false,
+        message: 'Product not found in wishlist'
+      };
+    }
+    
     throw error;
   }
 };
 
-// Clear Wishlist
+// Clear entire wishlist
 export const clearWishlist = async () => {
   try {
     const response = await api.delete('/wishlist/clear');
@@ -91,7 +127,8 @@ export const clearWishlist = async () => {
   } catch (error) {
     console.error('Error clearing wishlist:', error);
     
-    if (error.response && error.response.status === 403) {
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
@@ -105,15 +142,21 @@ export const clearWishlist = async () => {
   }
 };
 
-// Check if product is in wishlist
-export const checkWishlist = async (productId) => {
+// Check if product is in wishlist (with optional size check)
+export const checkWishlist = async (productId, sizeId = null) => {
   try {
-    const response = await api.get(`/wishlist/check/${productId}`);
+    // Build URL with optional sizeId query parameter
+    const url = sizeId 
+      ? `/wishlist/check/${productId}?size_id=${sizeId}`
+      : `/wishlist/check/${productId}`;
+    
+    const response = await api.get(url);
     return response.data;
   } catch (error) {
     console.error('Error checking wishlist:', error);
     
-    if (error.response && error.response.status === 403) {
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
@@ -127,7 +170,7 @@ export const checkWishlist = async (productId) => {
   }
 };
 
-// Get Wishlist Count
+// Get wishlist count
 export const getWishlistCount = async () => {
   try {
     const response = await api.get('/wishlist/count');
@@ -135,7 +178,8 @@ export const getWishlistCount = async () => {
   } catch (error) {
     console.error('Error getting wishlist count:', error);
     
-    if (error.response && error.response.status === 403) {
+    // Handle 403 Forbidden (Admin view-only mode)
+    if (error.response?.status === 403) {
       return {
         status: false,
         success: false,
@@ -146,5 +190,27 @@ export const getWishlistCount = async () => {
     }
     
     throw error;
+  }
+};
+
+// Get wishlist items count (simplified version)
+export const getWishlistItemCount = async () => {
+  try {
+    const response = await getWishlistCount();
+    return response.data?.count || 0;
+  } catch (error) {
+    console.error('Error getting wishlist item count:', error);
+    return 0;
+  }
+};
+
+// Check if a specific product with size is in wishlist (returns boolean)
+export const isInWishlist = async (productId, sizeId = null) => {
+  try {
+    const response = await checkWishlist(productId, sizeId);
+    return response.data?.in_wishlist || false;
+  } catch (error) {
+    console.error('Error checking wishlist status:', error);
+    return false;
   }
 };

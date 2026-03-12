@@ -1,3 +1,4 @@
+// Navbar.jsx
 import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Container from './Container'
@@ -23,6 +24,8 @@ import {
   Cog6ToothIcon
 } from '@heroicons/react/24/outline'
 import { HeartIcon as HeartIconSolid } from '@heroicons/react/24/solid'
+import { useWishlist } from '../context/WishlistContext';
+import { useCart } from '../context/CartContext';
 
 const API_URL = "http://localhost:8000";
 
@@ -36,35 +39,27 @@ const Navbar = () => {
   const [isAdmin, setIsAdmin] = useState(false)
   const [categories, setCategories] = useState([])
   const [loadingCategories, setLoadingCategories] = useState(false)
-  const [wishlistCount, setWishlistCount] = useState(0)
-  const [cartCount, setCartCount] = useState(0)
+  
+  const { wishlistCount, refreshWishlist } = useWishlist();
+  const { cartCount, refreshCart } = useCart();
+  
   const navigate = useNavigate()
 
   useEffect(() => {
     fetchCategories();
-    loadWishlistCount();
-    loadCartCount();
     checkLoginStatus();
     
-    // Listen for wishlist updates
-    window.addEventListener('wishlistUpdated', handleWishlistUpdate);
-    window.addEventListener('cartUpdated', handleCartUpdate);
+    window.addEventListener('login', handleLogin);
+    window.addEventListener('logout', handleLogout);
     window.addEventListener('storage', handleStorageChange);
     
-    // Also listen for custom events from other components
-    window.addEventListener('addToWishlist', loadWishlistCount);
-    window.addEventListener('removeFromWishlist', loadWishlistCount);
-    
     return () => {
-      window.removeEventListener('wishlistUpdated', handleWishlistUpdate);
-      window.removeEventListener('cartUpdated', handleCartUpdate);
+      window.removeEventListener('login', handleLogin);
+      window.removeEventListener('logout', handleLogout);
       window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('addToWishlist', loadWishlistCount);
-      window.removeEventListener('removeFromWishlist', loadWishlistCount);
     };
   }, []);
 
-  // Check dark mode preference on mount
   useEffect(() => {
     const isDark = localStorage.getItem('darkMode') === 'true'
     setDarkMode(isDark)
@@ -73,6 +68,23 @@ const Navbar = () => {
       document.documentElement.classList.add('dark')
     }
   }, []);
+
+  const handleLogin = () => {
+    checkLoginStatus();
+    refreshWishlist();
+    refreshCart();
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setIsLoggedIn(false);
+    setUser(null);
+    setIsAdmin(false);
+    setUserDropdownOpen(false);
+    setIsMenuOpen(false);
+    navigate('/');
+  };
 
   const fetchCategories = async () => {
     try {
@@ -85,7 +97,6 @@ const Navbar = () => {
         }
       })
       
-      // Extract categories from response
       let categoriesData = []
       if (res.data && res.data.data) {
         categoriesData = res.data.data
@@ -95,7 +106,6 @@ const Navbar = () => {
         categoriesData = res.data
       }
       
-      // Filter only active categories
       const activeCategories = categoriesData.filter(cat => 
         cat.status === 1 || cat.status === true
       )
@@ -108,85 +118,7 @@ const Navbar = () => {
     }
   }
 
-  const loadWishlistCount = () => {
-    try {
-      const token = localStorage.getItem('token');
-      
-      if (token) {
-        // For authenticated users, we might want to fetch from API
-        // But for now, we'll use localStorage for consistency
-        const savedWishlist = localStorage.getItem('wishlist');
-        if (savedWishlist) {
-          const wishlist = JSON.parse(savedWishlist);
-          setWishlistCount(Array.isArray(wishlist) ? wishlist.length : 0);
-        } else {
-          setWishlistCount(0);
-        }
-      } else {
-        // For non-authenticated users, just use localStorage
-        const savedWishlist = localStorage.getItem('wishlist');
-        if (savedWishlist) {
-          const wishlist = JSON.parse(savedWishlist);
-          setWishlistCount(Array.isArray(wishlist) ? wishlist.length : 0);
-        } else {
-          setWishlistCount(0);
-        }
-      }
-    } catch (error) {
-      console.error('Error parsing wishlist:', error);
-      setWishlistCount(0);
-    }
-  }
-
-  const loadCartCount = () => {
-    try {
-      const savedCart = localStorage.getItem('cart');
-      if (savedCart) {
-        const cart = JSON.parse(savedCart);
-        if (Array.isArray(cart)) {
-          const totalQuantity = cart.reduce((sum, item) => {
-            const quantity = item.quantity || 1;
-            return sum + quantity;
-          }, 0);
-          setCartCount(totalQuantity);
-        } else {
-          setCartCount(0);
-        }
-      } else {
-        setCartCount(0);
-      }
-    } catch (error) {
-      console.error('Error parsing cart:', error);
-      setCartCount(0);
-    }
-  }
-
-  const handleWishlistUpdate = (event) => {
-    if (event.detail && event.detail.count !== undefined) {
-      setWishlistCount(event.detail.count);
-    } else {
-      loadWishlistCount();
-    }
-  }
-
-  const handleCartUpdate = (event) => {
-    if (event.detail && event.detail.count !== undefined) {
-      setCartCount(event.detail.count);
-    } else if (event.detail && event.detail.cart) {
-      const totalQuantity = event.detail.cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
-      setCartCount(totalQuantity);
-    } else {
-      loadCartCount();
-    }
-  }
-
   const handleStorageChange = (e) => {
-    if (e.key === 'wishlist') {
-      loadWishlistCount();
-    }
-    if (e.key === 'cart') {
-      loadCartCount();
-    }
     if (e.key === 'token' || e.key === 'user') {
       checkLoginStatus();
     }
@@ -202,7 +134,6 @@ const Navbar = () => {
         setUser(parsedUser)
         setIsLoggedIn(true)
         
-        // Check if user is admin (role === 1)
         const role = Number(parsedUser.role)
         setIsAdmin(role === 1)
       } catch (error) {
@@ -231,24 +162,6 @@ const Navbar = () => {
     }
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    
-    setIsLoggedIn(false)
-    setUser(null)
-    setIsAdmin(false)
-    setUserDropdownOpen(false)
-    setIsMenuOpen(false)
-    
-    // Reset counts on logout
-    loadWishlistCount();
-    loadCartCount();
-    
-    navigate('/')
-  }
-
-  // Get user initials for avatar
   const getUserInitials = () => {
     if (user?.name) {
       return user.name.charAt(0).toUpperCase()
@@ -256,7 +169,6 @@ const Navbar = () => {
     return 'U'
   }
 
-  // Get user display name
   const getUserDisplayName = () => {
     if (user?.name) {
       return user.name.split(' ')[0]
@@ -288,7 +200,7 @@ const Navbar = () => {
   ]
 
   const Badge = ({ count }) => (
-    <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white">
+    <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-xs font-medium text-white animate-pulse">
       {count > 99 ? '99+' : count}
     </span>
   )
@@ -398,13 +310,11 @@ const Navbar = () => {
                 )}
               </button>
 
-              {/* Wishlist - FIXED: Added onClick to refresh count */}
+              {/* Wishlist */}
               <Link 
                 to="/wishlist" 
-                className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                onClick={() => {
-                  loadWishlistCount();
-                }}
+                className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 hover:scale-110"
+                onClick={() => refreshWishlist()}
               >
                 {wishlistCount > 0 ? (
                   <HeartIconSolid className="h-6 w-6 text-red-500" />
@@ -414,11 +324,11 @@ const Navbar = () => {
                 {wishlistCount > 0 && <Badge count={wishlistCount} />}
               </Link>
 
-              {/* Cart - with onClick to refresh count */}
+              {/* Cart */}
               <Link 
                 to="/cart" 
-                className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
-                onClick={() => loadCartCount()}
+                className="relative p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 hover:scale-110"
+                onClick={() => refreshCart()}
               >
                 <ShoppingCartIcon className="h-6 w-6 text-gray-700 dark:text-gray-300" />
                 {cartCount > 0 && <Badge count={cartCount} />}
@@ -443,61 +353,59 @@ const Navbar = () => {
                       <ChevronDownIcon className="h-4 w-4 text-gray-500" />
                     </button>
 
-                    {/* User Dropdown */}
+                    {/* User Dropdown - Without User Info Card */}
                     {userDropdownOpen && (
                       <>
                         <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 py-2 z-50">
-                          {/* User Info Header */}
-                          <div className="px-4 py-3 border-b dark:border-gray-700">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">
-                              {user?.name || 'User'}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              {user?.email || ''}
-                            </p>
-                          </div>
+                          {/* Dropdown Items - No user info card here */}
+                          <Link
+                            to="/my-account"
+                            className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setUserDropdownOpen(false)}
+                          >
+                            <UserIcon className="h-4 w-4" />
+                            My Account
+                          </Link>
+                          <Link
+                            to="/wishlist"
+                            className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => {
+                              setUserDropdownOpen(false);
+                              refreshWishlist();
+                            }}
+                          >
+                            <HeartIcon className="h-4 w-4" />
+                            My Wishlist ({wishlistCount})
+                          </Link>
+                          <Link
+                            to="/my-orders"
+                            className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            onClick={() => setUserDropdownOpen(false)}
+                          >
+                            <ClipboardDocumentListIcon className="h-4 w-4" />
+                            My Orders
+                          </Link>
 
-                          {/* Dropdown Items */}
-                          <div className="py-1">
+                          {isAdmin && (
                             <Link
-                              to="/wishlist"
-                              className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                              onClick={() => {
-                                setUserDropdownOpen(false);
-                                loadWishlistCount();
-                              }}
-                            >
-                              <HeartIcon className="h-4 w-4" />
-                              My Wishlist ({wishlistCount})
-                            </Link>
-                            <Link
-                              to="/my-orders"
+                              to="/admin/dashboard"
                               className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                               onClick={() => setUserDropdownOpen(false)}
                             >
-                              <ClipboardDocumentListIcon className="h-4 w-4" />
-                              My Orders
+                              <Cog6ToothIcon className="h-4 w-4" />
+                              Admin Dashboard
                             </Link>
+                          )}
 
-                            {isAdmin && (
-                              <Link
-                                to="/admin/dashboard"
-                                className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                onClick={() => setUserDropdownOpen(false)}
-                              >
-                                <Cog6ToothIcon className="h-4 w-4" />
-                                Admin Dashboard
-                              </Link>
-                            )}
+                          <div className="border-t dark:border-gray-700 my-1"></div>
 
-                            <button
-                              onClick={handleLogout}
-                              className="flex items-center gap-3 w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            >
-                              <ArrowRightOnRectangleIcon className="h-4 w-4" />
-                              Logout
-                            </button>
-                          </div>
+                          <button
+                            onClick={handleLogout}
+                            className="flex items-center gap-3 w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                          >
+                            <ArrowRightOnRectangleIcon className="h-4 w-4" />
+                            Logout
+                          </button>
                         </div>
                         <div 
                           className="fixed inset-0 z-40"
@@ -588,7 +496,7 @@ const Navbar = () => {
                   </div>
                 ))}
                 
-                {/* Mobile Auth Section */}
+                {/* Mobile Auth Section - Without User Info Card */}
                 <div className="pt-4 mt-4 border-t dark:border-gray-700">
                   {/* Dark Mode Toggle */}
                   <button
@@ -614,7 +522,7 @@ const Navbar = () => {
                       to="/wishlist"
                       className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
                       onClick={() => {
-                        loadWishlistCount();
+                        refreshWishlist();
                         setIsMenuOpen(false);
                       }}
                     >
@@ -629,7 +537,7 @@ const Navbar = () => {
                       to="/cart"
                       className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
                       onClick={() => {
-                        loadCartCount();
+                        refreshCart();
                         setIsMenuOpen(false);
                       }}
                     >
@@ -640,32 +548,26 @@ const Navbar = () => {
                   
                   {isLoggedIn ? (
                     <div className="mt-4 space-y-2">
-                      {/* User Info Card */}
-                      <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center">
-                            <span className="text-blue-600 dark:text-blue-400 font-bold text-lg">
-                              {getUserInitials()}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-semibold text-gray-900 dark:text-white">
-                              {user?.name || 'User'}
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                              {user?.email || ''}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
+                      {/* Mobile Menu Links - No user info card here */}
                       <Link
-                        to="/profile"
+                        to="/my-account"
                         className="flex items-center gap-3 py-3 px-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg"
                         onClick={() => setIsMenuOpen(false)}
                       >
                         <UserIcon className="h-5 w-5" />
-                        <span>My Profile</span>
+                        <span>My Account</span>
+                      </Link>
+                      
+                      <Link
+                        to="/wishlist"
+                        className="flex items-center gap-3 py-3 px-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg"
+                        onClick={() => {
+                          refreshWishlist();
+                          setIsMenuOpen(false);
+                        }}
+                      >
+                        <HeartIcon className="h-5 w-5" />
+                        <span>Wishlist ({wishlistCount})</span>
                       </Link>
                       
                       <Link

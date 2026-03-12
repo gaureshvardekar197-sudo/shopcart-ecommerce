@@ -5,7 +5,27 @@ export const adminMenu = [
     icon: "LayoutDashboard",
     path: "/admin/dashboard"
   },
-   {
+  {
+    id: 2,
+    title: "Products",
+    icon: "Package",
+    type: "dropdown",
+    subItems: [
+      {
+        id: 21,
+        title: "Add New Product",   
+        path: "/admin/products/new",
+        icon: "Plus"
+      },
+      {
+        id: 22,
+        title: "View Products",
+        path: "/admin/products",
+        icon: "Eye"
+      }
+    ]
+  },
+  {
     id: 3,
     title: "Categories",
     icon: "Layers",
@@ -16,44 +36,35 @@ export const adminMenu = [
         title: "Add New Category",
         path: "/admin/categories/new",
         icon: "Plus"
-
       },
       {
-        
         id: 32,
         title: "View Categories",
         path: "/admin/categories",
-         icon: "Eye"
+        icon: "Eye"
       }
     ]
   },
-  {
-    id: 2,
-    title: "Products",
-    icon: "Package",
-    // path: "/admin/products"
-    type: "dropdown",
-    subItems: [
-      {
-        id: 21,
-        title: "Add New Product",   
-        path: "/admin/products/new",
-        icon: "Plus"
-        },
-        {
-        id: 22,
-        title: "View Products",
-        path: "/admin/products",
-         icon: "Eye"
-      }
-    ]
-  },
- 
   {
     id: 4,
     title: "Orders",
     icon: "ShoppingCart",
-    path: "/admin/orders"
+    type: "dropdown",
+    subItems: [
+      {
+        id: 41,
+        title: "All Orders",
+        path: "/admin/orders",
+        icon: "ShoppingBag"
+      },
+      {
+        id: 42,
+        title: "Cancellation Requests",
+        path: "/admin/orders/cancellation-requests",
+        icon: "AlertCircle",
+        badge: "pending"
+      }
+    ]
   },
   {
     id: 5,
@@ -61,12 +72,13 @@ export const adminMenu = [
     icon: "Users",
     path: "/admin/users"
   },
-   {
+  {
     id: 6,
     title: "User Review",
     icon: "Star", 
     path: "/admin/Product_Review"
-  },
+  }
+];
 //   {
 //     id: 6,
 //     title: "Analytics",
@@ -79,7 +91,7 @@ export const adminMenu = [
 //     icon: "Settings",
 //     path: "/admin/settings"
 //   }
-];
+// ];
 
 //  
 //   {

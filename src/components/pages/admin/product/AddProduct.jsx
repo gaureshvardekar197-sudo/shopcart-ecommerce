@@ -11,17 +11,31 @@ import {
   Image as ImageIcon,
   RefreshCw,
   Check,
-  X
+  X,
+  Plus,
+  Trash2,
+  Ruler
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createProduct } from '../../../API/api-products';
 import { getCategories } from '../../../API/api-categories';
+import sizeApi from '../../../API/api-Product_sizes'; // Import size API
 import Swal from 'sweetalert2';
 
 const AddProduct = () => {
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Size related states
+  const [hasSizes, setHasSizes] = useState(false);
+  const [sizeCategory, setSizeCategory] = useState('clothing');
+  const [sizeOptions, setSizeOptions] = useState({});
+  const [selectedSizes, setSelectedSizes] = useState([]);
+  const [sizeStocks, setSizeStocks] = useState({});
+  const [sizePrices, setSizePrices] = useState({});
+  const [showSizeSection, setShowSizeSection] = useState(false);
+
   const [formData, setFormData] = useState({
     cate_id: '',
     name: '',
@@ -47,6 +61,7 @@ const AddProduct = () => {
   // Fetch active categories on component mount
   useEffect(() => {
     fetchActiveCategories();
+    fetchSizeOptions();
   }, []);
 
   const fetchActiveCategories = async () => {
@@ -64,6 +79,17 @@ const AddProduct = () => {
       }
     } catch (error) {
       console.error('Error fetching categories:', error);
+    }
+  };
+
+  const fetchSizeOptions = async () => {
+    try {
+      const response = await sizeApi.getSizeOptions();
+      if (response.status) {
+        setSizeOptions(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching size options:', error);
     }
   };
 
@@ -196,218 +222,323 @@ const AddProduct = () => {
     generateSlug();
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  // Size Management Functions
+  const handleSizeToggle = (e) => {
+    const checked = e.target.checked;
+    setHasSizes(checked);
+    setShowSizeSection(checked);
+    if (!checked) {
+      // Clear size data when toggled off
+      setSelectedSizes([]);
+      setSizeStocks({});
+      setSizePrices({});
+    }
+  };
 
-    // Validate required fields
-    if (!formData.cate_id) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Please select a category'
-      });
-      return;
-    }
-    if (!formData.name.trim()) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Product name is required'
-      });
-      return;
-    }
-    if (!formData.original_price) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Original price is required'
-      });
-      return;
-    }
-    if (!formData.selling_price) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Selling price is required'
-      });
-      return;
-    }
-    if (!formData.qty) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Quantity is required'
-      });
-      return;
-    }
-    if (!formData.description.trim()) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Description is required'
-      });
-      return;
-    }
-    if (!formData.image) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validation Error',
-        text: 'Main product image is required'
-      });
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
+  const handleSizeSelect = (size) => {
+    if (selectedSizes.includes(size)) {
+      // Remove size
+      setSelectedSizes(selectedSizes.filter(s => s !== size));
+      const newStocks = { ...sizeStocks };
+      const newPrices = { ...sizePrices };
+      delete newStocks[size];
+      delete newPrices[size];
+      setSizeStocks(newStocks);
+      setSizePrices(newPrices);
+    } else {
+      // Add size
+      setSelectedSizes([...selectedSizes, size]);
+      setSizeStocks({ ...sizeStocks, [size]: 0 });
       
-      // Show loading
-      Swal.fire({
-        title: 'Creating Product',
-        html: 'Please wait...',
-        allowOutsideClick: false,
-        didOpen: () => {
-          Swal.showLoading();
-        }
-      });
+      // Set default price as selling price
+      if (formData.selling_price) {
+        setSizePrices({ ...sizePrices, [size]: formData.selling_price });
+      }
+    }
+  };
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        Swal.close();
+  const handleSizeStockChange = (size, value) => {
+    setSizeStocks({
+      ...sizeStocks,
+      [size]: parseInt(value) || 0
+    });
+  };
+
+  const handleSizePriceChange = (size, value) => {
+    setSizePrices({
+      ...sizePrices,
+      [size]: parseFloat(value) || 0
+    });
+  };
+
+  const calculateTotalStock = () => {
+    return Object.values(sizeStocks).reduce((sum, stock) => sum + (stock || 0), 0);
+  };
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  // Validate required fields
+  if (!formData.cate_id) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Please select a category'
+    });
+    return;
+  }
+  if (!formData.name.trim()) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Product name is required'
+    });
+    return;
+  }
+  if (!formData.original_price) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Original price is required'
+    });
+    return;
+  }
+  if (!formData.selling_price) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Selling price is required'
+    });
+    return;
+  }
+  
+  // Validate quantity or sizes
+  if (!hasSizes && !formData.qty) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Quantity is required'
+    });
+    return;
+  }
+
+  if (hasSizes && selectedSizes.length === 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Please select at least one size'
+    });
+    return;
+  }
+
+  // Validate size stocks
+  if (hasSizes) {
+    for (const size of selectedSizes) {
+      if (!sizeStocks[size] || sizeStocks[size] <= 0) {
         Swal.fire({
           icon: 'error',
-          title: 'Authentication Error',
-          text: 'No authentication token found'
+          title: 'Validation Error',
+          text: `Please enter stock for size ${size}`
         });
         return;
       }
-
-      const formPayload = new FormData();
-      
-      // Append all form fields
-      formPayload.append('cate_id', formData.cate_id);
-      formPayload.append('name', formData.name.trim());
-      formPayload.append('slug', formData.slug || '');
-      formPayload.append('original_price', formData.original_price);
-      formPayload.append('selling_price', formData.selling_price);
-      formPayload.append('qty', formData.qty);
-      
-      if (formData.tax) {
-        formPayload.append('tax', formData.tax);
-      }
-      
-      formPayload.append('status', formData.status ? '1' : '0');
-      formPayload.append('trending', formData.trending ? '1' : '0');
-      
-      if (formData.small_description) {
-        formPayload.append('small_description', formData.small_description);
-      }
-      
-      formPayload.append('description', formData.description);
-      
-      if (formData.meta_title) {
-        formPayload.append('meta_title', formData.meta_title);
-      }
-      
-      if (formData.meta_keywords) {
-        formPayload.append('meta_keywords', formData.meta_keywords);
-      }
-      
-      if (formData.meta_description) {
-        formPayload.append('meta_description', formData.meta_description);
-      }
-      
-      // Append main image
-      if (formData.image) {
-        formPayload.append('image', formData.image);
-      }
-      
-      // Append multiple images
-      if (formData.product_images && formData.product_images.length > 0) {
-        formData.product_images.forEach(file => {
-          formPayload.append('product_images[]', file);
-        });
-      }
-
-      // Log FormData for debugging (optional)
-      for (let pair of formPayload.entries()) {
-        console.log(pair[0] + ': ' + pair[1]);
-      }
-
-      // Call API
-      const response = await createProduct(token, formPayload);
-      
-      Swal.close();
-      
-      Swal.fire({
-        icon: 'success',
-        title: 'Success!',
-        html: `<p>Product <strong>"${formData.name}"</strong> has been created successfully.</p>`,
-        timer: 6000,
-        timerProgressBar: true,
-        showConfirmButton: true,
-        confirmButtonText: 'View Products',
-        showCancelButton: true,
-        cancelButtonText: 'Add Another'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          navigate('/admin/products');
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-          // Reset form for another entry
-          setFormData({
-            cate_id: '',
-            name: '',
-            slug: '',
-            original_price: '',
-            selling_price: '',
-            qty: '',
-            tax: '',
-            status: true,
-            trending: false,
-            small_description: '',
-            description: '',
-            meta_title: '',
-            meta_keywords: '',
-            meta_description: '',
-            image: null,
-            product_images: []
-          });
-          setPreview(null);
-          setAdditionalPreviews([]);
-          setSlugManuallyEdited(false);
-        }
-      });
-
-    } catch (error) {
-      console.error('Error creating product:', error.response?.data || error);
-      
-      Swal.close();
-      
-      // Show validation errors
-      if (error.response?.status === 422) {
-        const errors = error.response.data.errors;
-        const errorMessages = Object.values(errors).flat().join('\n');
-        Swal.fire({
-          icon: 'error',
-          title: 'Validation Failed',
-          text: errorMessages
-        });
-      } else if (error.response?.status === 401) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Unauthorized',
-          text: 'Please login again'
-        });
-      } else {
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: error.response?.data?.message || 'Failed to create product'
-        });
-      }
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  }
+
+  if (!formData.description.trim()) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Description is required'
+    });
+    return;
+  }
+  if (!formData.image) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validation Error',
+      text: 'Main product image is required'
+    });
+    return;
+  }
+
+  try {
+    setIsSubmitting(true);
+    
+    // Show loading
+    Swal.fire({
+      title: 'Creating Product',
+      html: 'Please wait...',
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      Swal.close();
+      Swal.fire({
+        icon: 'error',
+        title: 'Authentication Error',
+        text: 'No authentication token found'
+      });
+      return;
+    }
+
+    const formPayload = new FormData();
+    
+    // Append all form fields
+    formPayload.append('cate_id', formData.cate_id);
+    formPayload.append('name', formData.name.trim());
+    formPayload.append('slug', formData.slug || '');
+    formPayload.append('original_price', formData.original_price);
+    formPayload.append('selling_price', formData.selling_price);
+    
+    // Handle quantity based on size selection
+    if (hasSizes) {
+      formPayload.append('has_sizes', '1');
+      formPayload.append('size_category', sizeCategory);
+      formPayload.append('selected_sizes', JSON.stringify(selectedSizes));
+      formPayload.append('size_stocks', JSON.stringify(selectedSizes.map(size => sizeStocks[size] || 0)));
+      
+      // Only send size_prices if they are different from base price
+      const prices = selectedSizes.map(size => {
+        const price = sizePrices[size];
+        return price && parseFloat(price) !== parseFloat(formData.selling_price) ? price : null;
+      });
+      
+      if (prices.some(p => p !== null)) {
+        formPayload.append('size_prices', JSON.stringify(prices));
+      }
+    } else {
+      formPayload.append('has_sizes', '0');
+      formPayload.append('qty', formData.qty);
+    }
+    
+    if (formData.tax) {
+      formPayload.append('tax', formData.tax);
+    }
+    
+    formPayload.append('status', formData.status ? '1' : '0');
+    formPayload.append('trending', formData.trending ? '1' : '0');
+    
+    if (formData.small_description) {
+      formPayload.append('small_description', formData.small_description);
+    }
+    
+    formPayload.append('description', formData.description);
+    
+    if (formData.meta_title) {
+      formPayload.append('meta_title', formData.meta_title);
+    }
+    
+    if (formData.meta_keywords) {
+      formPayload.append('meta_keywords', formData.meta_keywords);
+    }
+    
+    if (formData.meta_description) {
+      formPayload.append('meta_description', formData.meta_description);
+    }
+    
+    // Append main image
+    if (formData.image) {
+      formPayload.append('image', formData.image);
+    }
+    
+    // Append multiple images
+    if (formData.product_images && formData.product_images.length > 0) {
+      formData.product_images.forEach(file => {
+        formPayload.append('product_images[]', file);
+      });
+    }
+
+    // Log FormData for debugging (optional)
+    console.log('Sending data:');
+    for (let pair of formPayload.entries()) {
+      console.log(pair[0] + ': ' + pair[1]);
+    }
+
+    // Call API
+    const response = await createProduct(token, formPayload);
+    
+    Swal.close();
+    
+    Swal.fire({
+      icon: 'success',
+      title: 'Success!',
+      html: `<p>Product <strong>"${formData.name}"</strong> has been created successfully.</p>`,
+      timer: 6000,
+      timerProgressBar: true,
+      showConfirmButton: true,
+      confirmButtonText: 'View Products',
+      showCancelButton: true,
+      cancelButtonText: 'Add Another'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        navigate('/admin/products');
+      } else if (result.dismiss === Swal.DismissReason.cancel) {
+        // Reset form for another entry
+        setFormData({
+          cate_id: '',
+          name: '',
+          slug: '',
+          original_price: '',
+          selling_price: '',
+          qty: '',
+          tax: '',
+          status: true,
+          trending: false,
+          small_description: '',
+          description: '',
+          meta_title: '',
+          meta_keywords: '',
+          meta_description: '',
+          image: null,
+          product_images: []
+        });
+        setPreview(null);
+        setAdditionalPreviews([]);
+        setSlugManuallyEdited(false);
+        setHasSizes(false);
+        setShowSizeSection(false);
+        setSelectedSizes([]);
+        setSizeStocks({});
+        setSizePrices({});
+      }
+    });
+
+  } catch (error) {
+    console.error('Error creating product:', error.response?.data || error);
+    
+    Swal.close();
+    
+    // Show validation errors
+    if (error.response?.status === 422) {
+      const errors = error.response.data.errors;
+      const errorMessages = Object.values(errors).flat().join('\n');
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Failed',
+        text: errorMessages
+      });
+    } else if (error.response?.status === 401) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Unauthorized',
+        text: 'Please login again'
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: error.response?.data?.message || 'Failed to create product'
+      });
+    }
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <AdminLayout>
@@ -602,22 +733,45 @@ const AddProduct = () => {
                     </div>
                   </div>
 
-                  {/* Quantity */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Quantity <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      name="qty"
-                      value={formData.qty}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                      placeholder="Enter quantity"
-                      min="0"
-                    />
+                  {/* Size Toggle - New Field */}
+                  <div className="md:col-span-2">
+                    <div className="flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="hasSizes"
+                        checked={hasSizes}
+                        onChange={handleSizeToggle}
+                        className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <div>
+                        <label htmlFor="hasSizes" className="text-sm font-semibold text-gray-700 cursor-pointer">
+                          This product has sizes (Clothing, Shoes, etc.)
+                        </label>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Enable size variants for this product
+                        </p>
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Quantity - Only show if no sizes */}
+                  {!hasSizes && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Quantity <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        name="qty"
+                        value={formData.qty}
+                        onChange={handleInputChange}
+                        required={!hasSizes}
+                        className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                        placeholder="Enter quantity"
+                        min="0"
+                      />
+                    </div>
+                  )}
 
                   {/* Tax */}
                   <div>
@@ -643,6 +797,143 @@ const AddProduct = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Size Management Section - Only show when hasSizes is true */}
+              {showSizeSection && (
+                <div className="space-y-4 lg:space-y-6">
+                  <div className="flex items-center gap-3 pb-3 lg:pb-4 border-b border-gray-200">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <Ruler className="w-5 h-5 lg:w-6 lg:h-6 text-purple-600" />
+                    </div>
+                    <h2 className="text-base lg:text-lg font-bold text-gray-800">Size Management</h2>
+                  </div>
+
+                  {/* Size Category Selection */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Size Category
+                    </label>
+                    <select
+                      value={sizeCategory}
+                      onChange={(e) => setSizeCategory(e.target.value)}
+                      className="w-full px-4 py-3 text-sm lg:text-base border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all"
+                    >
+                      <option value="clothing">Clothing Sizes (XS, S, M, L, XL, XXL)</option>
+                      <option value="shoes">Shoe Sizes (36-46)</option>
+                      <option value="kids">Kids Sizes (2T-12T)</option>
+                      <option value="numeric">Numeric Sizes (0-12)</option>
+                    </select>
+                  </div>
+
+                  {/* Available Sizes */}
+                  {sizeOptions[sizeCategory] && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Available Sizes
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {sizeOptions[sizeCategory]?.sizes?.map((size) => (
+                          <button
+                            key={size}
+                            type="button"
+                            onClick={() => handleSizeSelect(size)}
+                            className={`
+                              px-4 py-2 text-sm font-medium rounded-lg border transition-all
+                              ${selectedSizes.includes(size)
+                                ? 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                              }
+                            `}
+                          >
+                            {size}
+                            {selectedSizes.includes(size) && (
+                              <Check className="inline-block w-3 h-3 ml-1" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Selected Sizes with Stock and Price */}
+                  {selectedSizes.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Configure Sizes
+                      </label>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-xl">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Size</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock *</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price (Optional)</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {selectedSizes.map((size) => (
+                              <tr key={size}>
+                                <td className="px-4 py-3">
+                                  <span className="font-medium text-gray-900">{size}</span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <input
+                                    type="number"
+                                    value={sizeStocks[size] || ''}
+                                    onChange={(e) => handleSizeStockChange(size, e.target.value)}
+                                    className="w-24 px-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                    placeholder="Stock"
+                                    min="0"
+                                    required
+                                  />
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="relative">
+                                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">
+                                      ₹
+                                    </div>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      value={sizePrices[size] || ''}
+                                      onChange={(e) => handleSizePriceChange(size, e.target.value)}
+                                      className="w-32 pl-8 pr-2 py-1 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                      placeholder={formData.selling_price}
+                                      min="0"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSizeSelect(size)}
+                                    className="text-red-600 hover:text-red-800"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50">
+                            <tr>
+                              <td className="px-4 py-3 font-medium">Total</td>
+                              <td className="px-4 py-3 font-medium">
+                                {calculateTotalStock()} units
+                              </td>
+                              <td className="px-4 py-3" colSpan="2"></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        * Stock is required for each size. Leave price empty to use base selling price (₹{formData.selling_price || '0'})
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Status & Trending */}
               <div className="space-y-4 lg:space-y-6">

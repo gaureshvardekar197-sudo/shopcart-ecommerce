@@ -7,6 +7,7 @@ import axios from 'axios'
 import { toast } from 'react-toastify'
 import { getWishlist, addToWishlist, removeFromWishlist } from '../API/api-wishlist'
 import { addToCart as apiAddToCart } from '../API/api-cart'
+import sizeApi from '../API/api-Product_sizes'
 
 const API_URL = "http://localhost:8000";
 
@@ -21,6 +22,7 @@ export default function FeaturedProducts() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [userRole, setUserRole] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [addingToCart, setAddingToCart] = useState({})
 
   useEffect(() => {
     checkAuth()
@@ -34,6 +36,12 @@ export default function FeaturedProducts() {
       window.removeEventListener('logout', handleLogout);
     };
   }, [])
+
+  useEffect(() => {
+    if (isAuthenticated !== undefined) {
+      loadWishlist();
+    }
+  }, [isAuthenticated]);
 
   const handleLogin = () => {
     checkAuth();
@@ -75,7 +83,13 @@ export default function FeaturedProducts() {
       const savedWishlist = localStorage.getItem('wishlist')
       if (savedWishlist) {
         try {
-          setWishlist(JSON.parse(savedWishlist))
+          const parsed = JSON.parse(savedWishlist)
+          setWishlist(parsed)
+          
+          // Dispatch event for navbar
+          window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+            detail: { count: parsed.length } 
+          }))
         } catch (error) {
           console.error('Error parsing wishlist:', error)
           setWishlist([])
@@ -86,17 +100,30 @@ export default function FeaturedProducts() {
 
     try {
       const response = await getWishlist()
+      let wishlistData = []
+      
       if (response && response.data && Array.isArray(response.data)) {
-        setWishlist(response.data)
-      } else {
-        setWishlist([])
+        wishlistData = response.data
+      } else if (Array.isArray(response)) {
+        wishlistData = response
       }
+      
+      setWishlist(wishlistData)
+      localStorage.setItem('wishlist', JSON.stringify(wishlistData))
+      
+      window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+        detail: { count: wishlistData.length } 
+      }))
     } catch (error) {
       console.error('Error loading wishlist:', error)
       const savedWishlist = localStorage.getItem('wishlist')
       if (savedWishlist) {
         try {
-          setWishlist(JSON.parse(savedWishlist))
+          const parsed = JSON.parse(savedWishlist)
+          setWishlist(parsed)
+          window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+            detail: { count: parsed.length } 
+          }))
         } catch (e) {
           setWishlist([])
         }
@@ -126,13 +153,32 @@ export default function FeaturedProducts() {
       
       console.log('All Products:', productsData.length)
       
+      // Filter trending products
       const trendingProducts = productsData.filter(product => 
         product.trending === 1 || product.trending === true
       )
       
-      console.log('Trending Products:', trendingProducts.length)
-      setAllProducts(trendingProducts)
-      setProducts(trendingProducts.slice(0, 8))
+      // Fetch sizes for each trending product
+      const productsWithSizes = await Promise.all(
+        trendingProducts.map(async (product) => {
+          try {
+            const sizesResponse = await sizeApi.getProductSizes(product.id)
+            if (sizesResponse?.data?.sizes) {
+              return {
+                ...product,
+                sizes: sizesResponse.data.sizes
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching sizes for product ${product.id}:`, error)
+          }
+          return product
+        })
+      )
+      
+      console.log('Trending Products with sizes:', productsWithSizes.length)
+      setAllProducts(productsWithSizes)
+      setProducts(productsWithSizes.slice(0, 8))
       
       await loadWishlist()
     } catch (error) {
@@ -174,12 +220,87 @@ export default function FeaturedProducts() {
     }).format(numPrice);
   }
 
+  // Get default size price for a product
+  const getDefaultSizePrice = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0]
+      return defaultSize?.selling_price || defaultSize?.price || product.selling_price || product.price || 0
+    }
+    return product.selling_price || product.price || 0
+  }
+
+  // Get default size original price - FIXED VERSION
+
+const getDefaultSizeOriginalPrice = (product) => {
+  // First check if product has sizes
+  if (product?.sizes && product.sizes.length > 0) {
+    const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0]
+    
+    // Check size-specific original price
+    if (defaultSize?.original_price && defaultSize.original_price > 0) {
+      return Number(defaultSize.original_price) // Ensure it's a number
+    }
+    if (defaultSize?.effective_original_price && defaultSize.effective_original_price > 0) {
+      return Number(defaultSize.effective_original_price) // Ensure it's a number
+    }
+  }
+  
+  // If no size original price, check product's original price
+  // Check all possible fields for original price
+  const possibleFields = [
+    'original_price', 'mrp', 'compare_at_price', 'regular_price',
+    'old_price', 'list_price', 'retail_price', 'originalPrice',
+    'MRP', 'comparePrice', 'original', 'price_old'
+  ]
+  
+  for (const field of possibleFields) {
+    const value = product[field]
+    if (value && !isNaN(value) && Number(value) > 0) {
+      return Number(value) // Ensure it's a number
+    }
+  }
+  
+  // No original price found
+  return null
+}
+
+  // Calculate discount based on default size
+  const calculateDefaultSizeDiscount = (product) => {
+    const price = getDefaultSizePrice(product)
+    const originalPrice = getDefaultSizeOriginalPrice(product)
+    
+    if (!originalPrice || originalPrice <= price || originalPrice === 0) return 0
+    return Math.round(((originalPrice - price) / originalPrice) * 100)
+  }
+
+  // Check stock based on default size
+  const isDefaultSizeInStock = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0]
+      return defaultSize?.stock > 0
+    }
+    return (product.qty > 0 || product.stock > 0)
+  }
+
+  // Get default size name
+  const getDefaultSizeName = (product) => {
+    if (product?.sizes && product.sizes.length > 0) {
+      const defaultSize = product.sizes.find(s => s.is_in_stock) || product.sizes[0]
+      return defaultSize?.size || null
+    }
+    return null
+  }
+
+  // Check if product has multiple sizes
+  const hasMultipleSizes = (product) => {
+    return product?.sizes && product.sizes.length > 1
+  }
+
   // Handle wishlist toggle with login redirect
   const toggleWishlist = async (product, e) => {
     e.preventDefault()
     e.stopPropagation()
 
-    // Check if user is not logged in
     if (!isAuthenticated) {
       toast.warning('🔐 Please login to add items to wishlist', {
         position: "top-right",
@@ -193,7 +314,6 @@ export default function FeaturedProducts() {
       return;
     }
 
-    // Check if user is admin (role 1)
     if (isAdmin) {
       toast.info('👑 Admin: You cannot add to wishlist', {
         position: "top-right",
@@ -203,12 +323,22 @@ export default function FeaturedProducts() {
       return
     }
 
-    const isInWishlist = wishlist.some(item => item.id === product.id)
-    let updatedWishlist
+    // Get the default size from the product
+    const defaultSize = product?.sizes?.[0]
+    
+    // Check if in wishlist (considering size)
+    const isInWishlist = wishlist.some(item => {
+      if (item.id !== product.id) return false
+      
+      if (item.pivot?.size_id || item.selected_size_id) {
+        return item.pivot?.size_id === defaultSize?.id || item.selected_size_id === defaultSize?.id
+      }
+      return false
+    })
 
     try {
       if (isInWishlist) {
-        const response = await removeFromWishlist(product.id)
+        const response = await removeFromWishlist(product.id, defaultSize?.id)
         
         if (response && response.is_admin_error) {
           toast.info('👑 Admin: You cannot modify wishlist', {
@@ -219,10 +349,24 @@ export default function FeaturedProducts() {
           return
         }
         
-        updatedWishlist = wishlist.filter(item => item.id !== product.id)
-        toast.success(`❤️ ${product.name} removed from wishlist`)
+        const updatedWishlist = wishlist.filter(item => {
+          if (item.id !== product.id) return true
+          if (defaultSize?.id) {
+            return item.pivot?.size_id !== defaultSize?.id && item.selected_size_id !== defaultSize?.id
+          }
+          return false
+        })
+        
+        setWishlist(updatedWishlist)
+        localStorage.setItem('wishlist', JSON.stringify(updatedWishlist))
+        
+        window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+          detail: { count: updatedWishlist.length } 
+        }))
+        
+        toast.success(`❤️ ${product.name}${defaultSize?.size ? ` (Size: ${defaultSize.size})` : ''} removed from wishlist`)
       } else {
-        const response = await addToWishlist(product.id)
+        const response = await addToWishlist(product.id, defaultSize?.size, defaultSize?.id)
         
         if (response && response.is_admin_error) {
           toast.info('👑 Admin: You cannot add to wishlist', {
@@ -233,19 +377,18 @@ export default function FeaturedProducts() {
           return
         }
         
-        if (response && response.data) {
-          updatedWishlist = [...wishlist, response.data]
-        } else {
-          updatedWishlist = [...wishlist, product]
-        }
-        toast.success(`❤️ ${product.name} added to wishlist`)
+        // Fetch updated wishlist
+        const wishlistResponse = await getWishlist()
+        const wishlistData = wishlistResponse?.data || wishlistResponse || []
+        setWishlist(wishlistData)
+        localStorage.setItem('wishlist', JSON.stringify(wishlistData))
+        
+        window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
+          detail: { count: wishlistData.length } 
+        }))
+        
+        toast.success(`❤️ ${product.name}${defaultSize?.size ? ` (Size: ${defaultSize.size})` : ''} added to wishlist`)
       }
-
-      setWishlist(updatedWishlist)
-      
-      window.dispatchEvent(new CustomEvent('wishlistUpdated', { 
-        detail: { count: updatedWishlist.length } 
-      }))
     } catch (error) {
       console.error('Wishlist error:', error)
       
@@ -256,10 +399,7 @@ export default function FeaturedProducts() {
           icon: "👑"
         })
       } else if (error.response?.status === 401) {
-        toast.error('Session expired. Please login again.', {
-          onClick: () => window.location.href = '/login'
-        })
-        
+        toast.error('Session expired. Please login again.')
         localStorage.removeItem('token')
         localStorage.removeItem('user')
         setIsAuthenticated(false)
@@ -271,24 +411,13 @@ export default function FeaturedProducts() {
     }
   }
 
-  const handleViewMore = () => {
-    setShowAll(true)
-    setProducts(allProducts)
-  }
-
-  const handleViewLess = () => {
-    setShowAll(false)
-    setProducts(allProducts.slice(0, 8))
-  }
-
-  // Handle add to cart with login redirect
+  // Handle add to cart with login redirect and size info
   const addToCart = async (product, e) => {
     e.preventDefault()
     e.stopPropagation()
 
     console.log('Add to cart clicked for product:', product)
 
-    // Check if user is not logged in
     if (!isAuthenticated) {
       toast.warning('🛒 Please login to add items to cart', {
         position: "top-right",
@@ -302,7 +431,6 @@ export default function FeaturedProducts() {
       return;
     }
 
-    // Check if user is admin (role 1)
     if (isAdmin) {
       toast.info('👑 Admin: You cannot add to cart', {
         position: "top-right",
@@ -311,10 +439,17 @@ export default function FeaturedProducts() {
       })
       return
     }
+    
+    setAddingToCart(prev => ({ ...prev, [product.id]: true }))
+    
+    // Get the default size from the product
+    const defaultSize = product?.sizes?.[0]
+    const sizeId = defaultSize?.id || null
+    const sizeName = defaultSize?.size || null
 
     try {
-      console.log('Calling apiAddToCart with:', product.id, 1)
-      const response = await apiAddToCart(product.id, 1)
+      console.log('Calling apiAddToCart with:', product.id, 1, sizeName, sizeId)
+      const response = await apiAddToCart(product.id, 1, sizeName, sizeId)
       console.log('Complete API Response:', response)
       
       if (response && response.is_admin_error) {
@@ -373,7 +508,7 @@ export default function FeaturedProducts() {
       console.log('Cart count:', cartCount)
       
       if (isSuccess) {
-        toast.success(`🛒 ${product.name} added to cart`)
+        toast.success(`🛒 ${product.name}${sizeName ? ` (Size: ${sizeName})` : ''} added to cart`)
         
         window.dispatchEvent(new CustomEvent('cartUpdated', { 
           detail: { count: cartCount, productId: product.id, action: 'add' } 
@@ -382,7 +517,7 @@ export default function FeaturedProducts() {
         if (response && response.message) {
           toast.info(response.message)
         } else {
-          toast.success(`🛒 ${product.name} added to cart`)
+          toast.success(`🛒 ${product.name}${sizeName ? ` (Size: ${sizeName})` : ''} added to cart`)
           
           window.dispatchEvent(new CustomEvent('cartUpdated', { 
             detail: { count: 1, productId: product.id, action: 'add' } 
@@ -402,9 +537,7 @@ export default function FeaturedProducts() {
       }
       
       if (error.response?.status === 401) {
-        toast.error('Session expired. Please login again.', {
-          onClick: () => window.location.href = '/login'
-        })
+        toast.error('Session expired. Please login again.')
         
         localStorage.removeItem('token')
         localStorage.removeItem('user')
@@ -426,7 +559,19 @@ export default function FeaturedProducts() {
       }
       
       toast.error('Failed to add to cart. Please try again.')
+    } finally {
+      setAddingToCart(prev => ({ ...prev, [product.id]: false }))
     }
+  }
+
+  const handleViewMore = () => {
+    setShowAll(true)
+    setProducts(allProducts)
+  }
+
+  const handleViewLess = () => {
+    setShowAll(false)
+    setProducts(allProducts.slice(0, 8))
   }
 
   if (loading) {
@@ -442,7 +587,7 @@ export default function FeaturedProducts() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
             {[1,2,3,4,5,6,7,8].map(item => (
               <div key={item} className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden">
-                <div className="h-56 bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
+                <div className="h-48 sm:h-56 bg-gray-200 dark:bg-gray-700 animate-pulse"></div>
                 <div className="p-4 space-y-3">
                   <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 animate-pulse"></div>
                   <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 animate-pulse"></div>
@@ -521,24 +666,28 @@ export default function FeaturedProducts() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {products.map(product => {
-            const originalPrice = Number(product.original_price) || 0;
-            const sellingPrice = Number(product.selling_price) || 0;
-            
+            const defaultSizePrice = getDefaultSizePrice(product)
+            const defaultSizeOriginalPrice = getDefaultSizeOriginalPrice(product)
+            const discount = calculateDefaultSizeDiscount(product)
+            const defaultSizeName = getDefaultSizeName(product)
+            const hasSizes = product?.sizes && product.sizes.length > 0
+            const inStock = isDefaultSizeInStock(product)
             const isInWishlist = wishlist.some(item => item.id === product.id)
-            const discount = originalPrice > sellingPrice 
-              ? Math.round(((originalPrice - sellingPrice) / originalPrice) * 100)
-              : 0;
-            const stock = product.qty || product.stock || 0
-            const hasDiscount = originalPrice > sellingPrice
-            const showOriginalPrice = originalPrice > 0
             const imageUrl = getImageUrl(product)
+
+            // Debug log to check values
+            console.log(`Product ${product.name}:`, {
+              price: defaultSizePrice,
+              originalPrice: defaultSizeOriginalPrice,
+              discount
+            });
 
             return (
               <div
                 key={product.id}
-                className="group relative rounded-xl md:rounded-2xl bg-white dark:bg-gray-800 shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden flex flex-col"
+                className="group relative rounded-xl bg-white dark:bg-gray-800 shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100 dark:border-gray-700 hover:-translate-y-1 flex flex-col h-full"
               >
                 <button
                   onClick={(e) => toggleWishlist(product, e)}
@@ -552,13 +701,14 @@ export default function FeaturedProducts() {
                   )}
                 </button>
 
-                <Link to={`/products/${product.id}`} className="flex-1">
-                  <div className="relative h-56 md:h-64 overflow-hidden bg-gray-100 dark:bg-gray-700">
-                    <div className="w-full h-full flex items-center justify-center">
+                <Link to={`/products/${product.id}`} className="flex flex-col h-full">
+                  {/* Image Container - Fixed height */}
+                  <div className="relative h-48 sm:h-56 bg-gray-100 dark:bg-gray-700 overflow-hidden flex-shrink-0">
+                    <div className="w-full h-full flex items-center justify-center p-4">
                       <img
                         src={imageUrl}
                         alt={product.name}
-                        className="w-full h-full object-contain group-hover:scale-110 transition duration-500"
+                        className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-110"
                         onError={(e) => {
                           e.target.onerror = null;
                           e.target.src = `https://via.placeholder.com/400x300?text=${encodeURIComponent(product.name)}`;
@@ -567,43 +717,56 @@ export default function FeaturedProducts() {
                       />
                     </div>
 
+                    {/* Trending Badge */}
                     {(product.trending === 1 || product.trending === true) && (
-                      <span className="absolute top-3 left-3 px-2 md:px-3 py-1 text-xs font-bold rounded-full bg-yellow-500 text-white flex items-center gap-1">
+                      <span className="absolute top-3 left-3 px-2 py-1 text-xs font-bold rounded-full bg-yellow-500 text-white flex items-center gap-1 z-10">
                         🔥 Trending
                       </span>
                     )}
 
-                    {hasDiscount && (
-                      <span className="absolute bottom-3 left-3 px-2 md:px-3 py-1 text-xs font-bold rounded-full bg-red-600 text-white">
+                    {/* Discount Badge */}
+                    {discount > 0 && !isAdmin && (
+                      <span className="absolute bottom-3 left-3 px-2 py-1 text-xs font-bold rounded-full bg-red-600 text-white z-10">
                         {discount}% OFF
                       </span>
                     )}
 
-                    {stock === 0 && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <span className="bg-red-600 text-white px-3 py-1.5 rounded-full text-sm font-bold">
+                    {/* Out of Stock Overlay */}
+                    {!inStock && (
+                      <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-20">
+                        <span className="bg-white px-4 py-2 rounded-lg font-bold text-gray-900 text-sm shadow-xl">
                           Out of Stock
                         </span>
                       </div>
                     )}
                   </div>
 
-                  <div className="p-4 md:p-6 flex flex-col flex-grow">
+                  {/* Product Info - Flex grow to fill remaining space */}
+                  <div className="p-4 flex flex-col flex-grow">
                     <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
                       {product.category?.name || 'Uncategorized'}
                     </span>
 
-                    <h3 className="mt-2 font-semibold text-base md:text-lg text-gray-900 dark:text-white line-clamp-2">
+                    <h3 className="mt-2 font-semibold text-base text-gray-900 dark:text-white line-clamp-2 min-h-[3rem]">
                       {product.name}
                     </h3>
 
+                    {/* Size Badge - Show if product has sizes */}
+                    {hasSizes && defaultSizeName && (
+                      <div className="">
+                        <span className="hidden">Size:</span>
+                        <span className="hidden">{defaultSizeName}</span>
+                      </div>
+                    )}
+
+                    {/* Rating */}
                     {product.rating > 0 && (
-                      <div className="flex items-center gap-2 mt-2">
+                      <div className="flex items-center gap-2 mt-1">
                         <div className="flex">
                           {[...Array(5)].map((_, i) => (
                             <StarIconSolid
                               key={i}
-                              className={`w-3 h-3 md:w-4 md:h-4 ${
+                              className={`w-3 h-3 ${
                                 i < Math.floor(product.rating || 0)
                                   ? 'text-yellow-400'
                                   : 'text-gray-300 dark:text-gray-600'
@@ -611,51 +774,73 @@ export default function FeaturedProducts() {
                             />
                           ))}
                         </div>
-                        <span className="text-xs md:text-sm text-gray-500">
+                        <span className="text-xs text-gray-500">
                           ({product.reviews_count || 0})
                         </span>
                       </div>
                     )}
 
-                    <div className="mt-auto pt-4 md:pt-5">
-                      <div className="flex items-center gap-2 mb-3 md:mb-4">
-                        <span className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white">
-                          {formatPrice(sellingPrice)}
+                    {/* Price Section */}
+                    <div className="mt-auto ">
+                      <div className="flex items-baseline gap-2 flex-wrap">
+                        <span className="text-xl font-bold text-gray-900 dark:text-white">
+                          {formatPrice(defaultSizePrice)}
                         </span>
                         
-                        {showOriginalPrice && (
+                        {defaultSizeOriginalPrice && defaultSizeOriginalPrice > 0 && defaultSizeOriginalPrice > defaultSizePrice && !isAdmin && (
                           <span className="text-sm text-gray-400 line-through">
-                            {formatPrice(originalPrice)}
+                            {formatPrice(defaultSizeOriginalPrice)}
                           </span>
                         )}
                       </div>
+
+                      {/* Multiple sizes indicator */}
+                      {hasMultipleSizes(product) && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          +{product.sizes.length - 1} more sizes available
+                        </p>
+                      )}
                     </div>
                   </div>
+
+                  {/* Add to Cart Button - Auto margin top to push to bottom */}
+                  <div className="px-4 pb-4 mt-auto">
+                    <button 
+                      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all transform hover:scale-[1.02] ${
+                        isAdmin
+                          ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+                          : !inStock
+                            ? 'bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white shadow-md hover:shadow-lg'
+                      }`}
+                      disabled={isAdmin || !inStock || addingToCart[product.id]}
+                      onClick={(e) => addToCart(product, e)}
+                      title={!isAuthenticated ? "Login to add to cart" : (isAdmin ? "Admins cannot add to cart" : (!inStock ? "Out of Stock" : ""))}
+                    >
+                      {addingToCart[product.id] ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          <span>Adding...</span>
+                        </>
+                      ) : isAdmin ? (
+                        'Admin View Only'
+                      ) : !inStock ? (
+                        'Out of Stock'
+                      ) : (
+                        <>
+                          <ShoppingBagIcon className="w-4 h-4" />
+                          Add to Cart
+                        </>
+                      )}
+                    </button>
+
+                    {inStock && !isAdmin && product?.sizes?.[0]?.stock < 10 && (
+                      <p className="text-xs text-orange-600 mt-2 text-center">
+                        Only {product.sizes[0].stock} left in stock!
+                      </p>
+                    )}
+                  </div>
                 </Link>
-
-                <div className="px-4 md:px-6 pb-4 md:pb-6">
-                  <button 
-                    className={`w-full flex items-center justify-center gap-2 py-2 md:py-3 rounded-lg font-semibold transition ${
-                      stock > 0 && !isAdmin
-                        ? 'bg-primary-600 hover:bg-primary-700 text-white'
-                        : stock === 0 
-                        ? 'bg-gray-300 cursor-not-allowed text-gray-500'
-                        : 'bg-gray-300 cursor-not-allowed text-gray-500'
-                    }`}
-                    disabled={stock === 0 || isAdmin}
-                    onClick={(e) => addToCart(product, e)}
-                    title={!isAuthenticated ? "Login to add to cart" : (isAdmin ? "Admins cannot add to cart" : "")}
-                  >
-                    <ShoppingBagIcon className="w-4 h-4" />
-                    {!isAuthenticated ? 'Add to Cart' : (isAdmin ? 'Admin View Only' : (stock > 0 ? 'Add to Cart' : 'Out of Stock'))}
-                  </button>
-
-                  {stock > 0 && stock < 10 && !isAdmin && (
-                    <p className="text-xs text-orange-600 mt-2 text-center">
-                      Only {stock} left in stock!
-                    </p>
-                  )}
-                </div>
               </div>
             )
           })}

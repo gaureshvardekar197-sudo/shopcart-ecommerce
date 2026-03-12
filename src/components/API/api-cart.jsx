@@ -1,263 +1,154 @@
-// // API/api-cart.js - Updated version with fixed clearCart
-
-// import api from "./axios";
-
-// // Get Cart Items
-// export const getCart = async () => {
-//   try {
-//     const response = await api.get("/cart");
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error fetching cart:', error);
-//     throw error;
-//   }
-// };
-
-// // Add To Cart
-// export const addToCart = async (productId, quantity = 1) => {
-//   try {
-//     const response = await api.post("/cart", {
-//       product_id: productId,
-//       quantity: quantity,
-//     });
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error adding to cart:', error);
-//     throw error;
-//   }
-// };
-
-// // Update Cart Quantity
-// export const updateCartItem = async (productId, quantity) => {
-//   try {
-//     const response = await api.put(`/cart/${productId}`, {
-//       quantity: quantity
-//     });
-    
-//     console.log('Update cart response:', response.data);
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error updating cart:', error);
-//     if (error.response) {
-//       console.error('Error response data:', error.response.data);
-//       console.error('Error response status:', error.response.status);
-//     }
-//     throw error;
-//   }
-// };
-
-// // Remove Item From Cart
-// export const removeCartItem = async (productId) => {
-//   try {
-//     const response = await api.delete(`/cart/${productId}`);
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error removing from cart:', error);
-//     throw error;
-//   }
-// };
-
-// // Clear Cart - FIXED VERSION
-// export const clearCart = async () => {
-//   try {
-//     // Use the correct endpoint - /cart/clear instead of /cart
-//     const response = await api.delete("/cart/clear");
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error clearing cart:', error);
-//     if (error.response) {
-//       console.error('Error response data:', error.response.data);
-//       console.error('Error response status:', error.response.status);
-//     }
-//     throw error;
-//   }
-// };
-
-// // Get Cart Count
-// export const getCartCount = async () => {
-//   try {
-//     const response = await api.get("/cart/count");
-//     return response.data;
-//   } catch (error) {
-//     console.error('Error getting cart count:', error);
-//     throw error;
-//   }
-// };
-
-// API/api-cart.js - Updated version with fixed clearCart and role-based error handling
-
 import api from "./axios";
 
-// Get Cart Items
 export const getCart = async () => {
   try {
     const response = await api.get("/cart");
     return response.data;
   } catch (error) {
     console.error('Error fetching cart:', error);
-    // Check if it's a role-based error (403)
-    if (error.response && error.response.status === 403) {
-      // Return a specific structure for role-based errors
-      return {
-        status: false,
-        success: false,
-        message: error.response.data.message || 'Not authorized to view cart',
-        role_error: true
-      };
-    }
     throw error;
   }
 };
 
-// Add To Cart
-export const addToCart = async (productId, quantity = 1) => {
+export const addToCart = async (productId, quantity = 1, size = null, sizeId = null) => {
   try {
-    const response = await api.post("/cart", {
+    if (!productId) {
+      throw new Error('Product ID is required');
+    }
+    
+    if (quantity < 1) {
+      throw new Error('Quantity must be at least 1');
+    }
+    
+    const payload = {
       product_id: productId,
       quantity: quantity,
-    });
+    };
     
-    // Log the full response for debugging
-    console.log('Add to cart raw response:', response);
-    console.log('Add to cart response data:', response.data);
+    if (sizeId && !isNaN(parseInt(sizeId))) {
+      payload.size_id = parseInt(sizeId);
+    }
     
+    console.log('Sending payload:', payload);
+    
+    const response = await api.post("/cart", payload);
+    console.log('Raw response:', response);
+    
+    // Return the data directly
     return response.data;
-  } catch (error) {
-    console.error('Error adding to cart:', error);
     
-    // Handle role-based errors (403)
+  } catch (error) {
+    console.error('Add to cart error:', error);
+    
+    // If it's an axios error with response
     if (error.response) {
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
+      console.error('Error status:', error.response.status);
+      console.error('Error data:', error.response.data);
       
-      if (error.response.status === 403) {
-        return {
-          status: false,
-          success: false,
-          message: error.response.data.message || 'Users with role 1 cannot add items to cart',
-          role_error: true
-        };
+      // Return the error response data if available
+      if (error.response.data) {
+        return error.response.data;
       }
       
-      // Handle validation errors (422)
-      if (error.response.status === 422) {
-        return {
-          status: false,
-          success: false,
-          message: 'Validation error',
-          errors: error.response.data.errors,
-          validation_error: true
-        };
+      // Create structured error response
+      switch (error.response.status) {
+        case 401:
+          return {
+            status: false,
+            message: 'Please login to add items to cart'
+          };
+        case 403:
+          return {
+            status: false,
+            role_error: true,
+            message: 'Cannot add to cart'
+          };
+        case 409:
+          return {
+            status: false,
+            duplicate_error: true,
+            message: 'Item already in cart'
+          };
+        case 422:
+          return {
+            status: false,
+            validation_error: true,
+            message: 'Validation error',
+            errors: error.response.data.errors
+          };
+        default:
+          return {
+            status: false,
+            message: error.response.data?.message || 'Failed to add to cart'
+          };
       }
     }
     
-    // Re-throw other errors
-    throw error;
+    // Network error or other issues
+    return {
+      status: false,
+      message: error.message || 'Network error. Please check your connection.'
+    };
   }
 };
 
-// Update Cart Quantity
-export const updateCartItem = async (productId, quantity) => {
+export const updateCartItem = async (productId, quantity, sizeId = null) => {
   try {
-    const response = await api.put(`/cart/${productId}`, {
-      quantity: quantity
-    });
+    const payload = { quantity };
+    const url = sizeId 
+      ? `/cart/${productId}?size_id=${sizeId}` 
+      : `/cart/${productId}`;
     
-    console.log('Update cart response:', response.data);
+    const response = await api.put(url, payload);
     return response.data;
   } catch (error) {
     console.error('Error updating cart:', error);
-    
-    if (error.response) {
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
-      
-      // Handle role-based errors (403)
-      if (error.response.status === 403) {
-        return {
-          status: false,
-          success: false,
-          message: error.response.data.message || 'Not authorized to update cart',
-          role_error: true
-        };
-      }
-    }
-    
-    throw error;
+    return {
+      status: false,
+      message: error.response?.data?.message || 'Failed to update cart'
+    };
   }
 };
 
-// Remove Item From Cart
-export const removeCartItem = async (productId) => {
+export const removeCartItem = async (productId, sizeId = null) => {
   try {
-    const response = await api.delete(`/cart/${productId}`);
+    const url = sizeId 
+      ? `/cart/${productId}?size_id=${sizeId}` 
+      : `/cart/${productId}`;
+    
+    const response = await api.delete(url);
     return response.data;
   } catch (error) {
     console.error('Error removing from cart:', error);
-    
-    if (error.response) {
-      if (error.response.status === 403) {
-        return {
-          status: false,
-          success: false,
-          message: error.response.data.message || 'Not authorized to remove items from cart',
-          role_error: true
-        };
-      }
-    }
-    
-    throw error;
+    return {
+      status: false,
+      message: error.response?.data?.message || 'Failed to remove item'
+    };
   }
 };
 
-// Clear Cart - FIXED VERSION
 export const clearCart = async () => {
   try {
-    // Use the correct endpoint - /cart/clear instead of /cart
     const response = await api.delete("/cart/clear");
     return response.data;
   } catch (error) {
     console.error('Error clearing cart:', error);
-    
-    if (error.response) {
-      console.error('Error response data:', error.response.data);
-      console.error('Error response status:', error.response.status);
-      
-      // Handle role-based errors (403)
-      if (error.response.status === 403) {
-        return {
-          status: false,
-          success: false,
-          message: error.response.data.message || 'Not authorized to clear cart',
-          role_error: true
-        };
-      }
-    }
-    
-    throw error;
+    return {
+      status: false,
+      message: error.response?.data?.message || 'Failed to clear cart'
+    };
   }
 };
 
-// Get Cart Count
 export const getCartCount = async () => {
   try {
     const response = await api.get("/cart/count");
     return response.data;
   } catch (error) {
     console.error('Error getting cart count:', error);
-    
-    if (error.response) {
-      if (error.response.status === 403) {
-        return {
-          status: false,
-          success: false,
-          message: error.response.data.message || 'Not authorized to view cart count',
-          role_error: true,
-          data: { count: 0, total_quantity: 0 } // Return empty data for role 1
-        };
-      }
-    }
-    
-    throw error;
+    return {
+      status: false,
+      data: { count: 0, total_quantity: 0 }
+    };
   }
 };

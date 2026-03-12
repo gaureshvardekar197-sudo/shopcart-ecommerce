@@ -14,6 +14,8 @@ import {
   X,
   Plus,
   Eye,
+  AlertCircle,
+  ShoppingBag,
   Star
 } from 'lucide-react';
 import { adminMenu } from '../utils/constants';
@@ -36,12 +38,14 @@ const AdminSidebar = () => {
       Users: Users,
       Plus: Plus,
       Eye: Eye,
-      Star: Star
+      Star: Star,
+      AlertCircle: AlertCircle,
+      ShoppingBag: ShoppingBag
     };
     const IconComponent = icons[iconName];
     return IconComponent ? <IconComponent className="w-5 h-5" /> : null;
   };
-    // ✅ Logout with API
+
   const handleLogout = async () => {
     try {
       await api.post("/logout");
@@ -52,13 +56,6 @@ const AdminSidebar = () => {
       navigate("/login");
     }
   };
-
-  // const handleLogout = () => {
-  //   localStorage.removeItem('isLoggedIn');
-  //   localStorage.removeItem('isAdmin');
-  //   localStorage.removeItem('userEmail');
-  //   navigate('/login');
-  // };
 
   const toggleDropdown = (id) => {
     setOpenDropdown(openDropdown === id ? null : id);
@@ -86,7 +83,7 @@ const AdminSidebar = () => {
         <Menu className="w-6 h-6 text-gray-700" />
       </button>
 
-      {/* SIDEBAR - EXACT SAME AS YOUR DESKTOP CODE, only mobile visibility added */}
+      {/* SIDEBAR - SCROLLABLE VERSION */}
       <div className={`
         bg-white text-gray-800 h-screen flex flex-col fixed left-0 top-0 z-50 
         transition-all duration-300 border-r border-gray-200 
@@ -102,8 +99,8 @@ const AdminSidebar = () => {
           <X className="w-6 h-6 text-gray-600" />
         </button>
 
-        {/* Logo Section - EXACT SAME AS YOUR CODE */}
-        <div className="flex justify-center items-center py-1 border-b border-gray-200">
+        {/* Logo Section - Fixed at top */}
+        <div className="flex justify-center items-center py-1 border-b border-gray-200 flex-shrink-0">
           <div className={`${collapsed ? 'w-16 h-16' : 'w-22 h-22'} rounded-xl flex items-center justify-center`}>
             <img 
               src={logo} 
@@ -113,8 +110,8 @@ const AdminSidebar = () => {
           </div>
         </div>
 
-        {/* Scrollable Navigation Menu - EXACT SAME AS YOUR CODE */}
-        <div className="flex-1  py-4">
+        {/* Scrollable Navigation Menu - THIS IS THE SCROLLABLE PART */}
+        <div className="flex-1 overflow-y-auto py-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
           <nav className="px-4 space-y-1">
             {adminMenu.map((item) => (
               <div key={item.id}>
@@ -149,7 +146,7 @@ const AdminSidebar = () => {
                       )}
                     </button>
                     
-                    {/* Dropdown Items - ONLY ICONS ADDED, NO UI CHANGES */}
+                    {/* Dropdown Items */}
                     {openDropdown === item.id && !collapsed && (
                       <div className="ml-6 mt-1 space-y-1">
                         {item.subItems.map((subItem) => (
@@ -167,7 +164,6 @@ const AdminSidebar = () => {
                           >
                             {({ isActive }) => (
                               <>
-                                {/* ONLY THIS LINE CHANGED - Added getIcon call */}
                                 <div className={`p-1 rounded ${
                                   isActive ? 'text-white' : 'text-gray-400'
                                 }`}>
@@ -208,8 +204,8 @@ const AdminSidebar = () => {
           </nav>
         </div>
 
-        {/* Fixed Bottom Actions - EXACT SAME AS YOUR CODE */}
-        <div className="p-4 border-t border-gray-200 space-y-2 bg-white">
+        {/* Fixed Bottom Actions - Fixed at bottom */}
+        <div className="p-4 border-t border-gray-200 space-y-2 bg-white flex-shrink-0">
           <button 
             onClick={() => {
               handleLogout();
