@@ -1,3 +1,4 @@
+// API/api-products.jsx
 import axios from "axios";
 
 const API_URL = "http://localhost:8000/api";
@@ -82,10 +83,49 @@ api.interceptors.response.use(
  * PUBLIC PRODUCT ENDPOINTS (No Auth Required for GET)
  */
 
-// Get all products
-export const getProducts = async () => {
+// Get all products with search and pagination - UPDATED
+export const getProducts = async (params = {}) => {
   try {
-    const response = await api.get('/products');
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    
+    // Add search parameter if provided
+    if (params.search) {
+      queryParams.append('search', params.search);
+    }
+    
+    // Add pagination
+    if (params.limit) {
+      queryParams.append('limit', params.limit);
+    }
+    
+    if (params.page) {
+      queryParams.append('page', params.page);
+    }
+    
+    // Add sorting
+    if (params.sort) {
+      queryParams.append('sort', params.sort);
+    }
+    
+    // Add category filter
+    if (params.category) {
+      queryParams.append('category', params.category);
+    }
+    
+    // Add price range
+    if (params.min_price) {
+      queryParams.append('min_price', params.min_price);
+    }
+    
+    if (params.max_price) {
+      queryParams.append('max_price', params.max_price);
+    }
+    
+    const queryString = queryParams.toString();
+    const url = queryString ? `/products?${queryString}` : '/products';
+    
+    const response = await api.get(url);
     return response.data;
   } catch (error) {
     console.error('API Error:', error.response?.data || error.message);
@@ -93,7 +133,7 @@ export const getProducts = async () => {
   }
 };
 
-// Get single product by ID with all details (including sizes) - FIXED
+// Get single product by ID with all details (including sizes)
 export const getProduct = async (token, id) => {
   try {
     // Clean the ID first
@@ -116,10 +156,33 @@ export const getProduct = async (token, id) => {
 };
 
 // Get products by category ID
-export const getProductsByCategory = async (categoryId) => {
+export const getProductsByCategory = async (categoryId, params = {}) => {
   try {
     const cleanId = extractNumericId(categoryId) || categoryId;
-    const response = await api.get(`/products/category/${cleanId}`);
+    
+    // Build query parameters
+    const queryParams = new URLSearchParams();
+    
+    if (params.search) {
+      queryParams.append('search', params.search);
+    }
+    
+    if (params.limit) {
+      queryParams.append('limit', params.limit);
+    }
+    
+    if (params.page) {
+      queryParams.append('page', params.page);
+    }
+    
+    if (params.sort) {
+      queryParams.append('sort', params.sort);
+    }
+    
+    const queryString = queryParams.toString();
+    const url = queryString ? `/products/category/${cleanId}?${queryString}` : `/products/category/${cleanId}`;
+    
+    const response = await api.get(url);
     return response.data;
   } catch (error) {
     console.error('API Error:', error.response?.data || error.message);
@@ -147,7 +210,7 @@ export const createProduct = async (token, data) => {
   }
 };
 
-// Update product (Admin only) - FIXED
+// Update product (Admin only)
 export const updateProduct = async (token, id, data) => {
   try {
     const cleanId = extractNumericId(id);
@@ -169,7 +232,7 @@ export const updateProduct = async (token, id, data) => {
   }
 };
 
-// Delete product (Admin only) - FIXED
+// Delete product (Admin only)
 export const deleteProduct = async (token, id) => {
   try {
     const cleanId = extractNumericId(id);
@@ -214,7 +277,7 @@ export const getSizesByCategory = async (category) => {
   }
 };
 
-// Get price range for product sizes - FIXED
+// Get price range for product sizes
 export const getPriceRange = async (productId) => {
   try {
     const cleanId = extractNumericId(productId) || productId;
@@ -226,7 +289,7 @@ export const getPriceRange = async (productId) => {
   }
 };
 
-// Get all sizes for a specific product - FIXED
+// Get all sizes for a specific product
 export const getProductSizes = async (productId) => {
   try {
     const cleanId = extractNumericId(productId) || productId;
@@ -238,7 +301,7 @@ export const getProductSizes = async (productId) => {
   }
 };
 
-// Check size availability - FIXED
+// Check size availability
 export const checkSizeAvailability = async (productId, sizeData) => {
   try {
     const cleanId = extractNumericId(productId) || productId;
@@ -262,7 +325,7 @@ export const getSizeDetails = async (sizeId) => {
   }
 };
 
-// Admin size management - FIXED
+// Admin size management
 export const addProductSizes = async (token, productId, sizeData) => {
   try {
     const cleanId = extractNumericId(productId) || productId;
@@ -363,6 +426,17 @@ export const parseProductResponse = (product) => {
   return product;
 };
 
+// Search products helper
+export const searchProducts = async (searchTerm, limit = 10) => {
+  try {
+    const response = await getProducts({ search: searchTerm, limit });
+    return response;
+  } catch (error) {
+    console.error('Search error:', error);
+    throw error;
+  }
+};
+
 // Export all functions as default object
 export default {
   getProducts,
@@ -381,5 +455,6 @@ export default {
   updateBulkSizes,
   updateSize,
   deleteSize,
-  parseProductResponse
+  parseProductResponse,
+  searchProducts
 };

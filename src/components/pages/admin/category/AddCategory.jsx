@@ -40,12 +40,12 @@ const AddCategory = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
+      // Check file size (max 2MB to match Laravel validation)
+      if (file.size > 2 * 1024 * 1024) {
         Swal.fire({
           icon: 'error',
           title: 'File Too Large',
-          text: 'Image size should be less than 5MB',
+          text: 'Image size should be less than 2MB',
           timer: 3000,
           showConfirmButton: true
         });
@@ -53,12 +53,12 @@ const AddCategory = () => {
       }
       
       // Check file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedTypes.includes(file.type)) {
         Swal.fire({
           icon: 'error',
           title: 'Invalid File Type',
-          text: 'Please upload JPG, JPEG, PNG or GIF images only',
+          text: 'Please upload JPG, JPEG, PNG, GIF or WEBP images only',
           timer: 3000,
           showConfirmButton: true
         });
@@ -191,7 +191,7 @@ const AddCategory = () => {
     });
   };
 
-  // === Submit form and call API ===
+  // Submit form and call API - FIXED: Don't pass token separately
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -210,13 +210,6 @@ const AddCategory = () => {
       setIsSubmitting(true);
       showLoadingMessage();
 
-      const token = localStorage.getItem('token');
-      if (!token) {
-        Swal.close();
-        showErrorMessage('User not authenticated');
-        return;
-      }
-
       const formPayload = new FormData();
       formPayload.append('name', formData.name.trim());
       formPayload.append('slug', formData.slug || '');
@@ -229,8 +222,10 @@ const AddCategory = () => {
         console.log(pair[0] + ': ' + pair[1]);
       }
 
-      // Call API
-      const response = await createCategory(token, formPayload);
+      // FIXED: Call API without token - token is handled by axios interceptor
+      const response = await createCategory(formPayload);
+      
+      console.log('Create category response:', response);
       
       // Close loading
       Swal.close();
@@ -420,10 +415,17 @@ const AddCategory = () => {
                       <div className="relative max-w-md mx-auto lg:mx-0">
                         <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 bg-gray-50">
                           <img src={preview} alt="Preview" className="w-full h-48 object-cover rounded-lg" />
-                          <button type="button" onClick={removeImage} className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors">
+                          <button 
+                            type="button" 
+                            onClick={removeImage} 
+                            className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full hover:bg-red-600 transition-colors"
+                          >
                             <X className="w-4 h-4" />
                           </button>
                         </div>
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          Click X to remove and upload different image
+                        </p>
                       </div>
                     ) : (
                       <label className="block cursor-pointer max-w-md mx-auto lg:mx-0">
@@ -431,10 +433,16 @@ const AddCategory = () => {
                           <Upload className="h-10 w-10 lg:h-12 lg:w-12 text-gray-400 mb-4" />
                           <div className="text-sm text-gray-600 text-center">
                             <span className="font-medium text-blue-600 hover:text-blue-500">Click to upload category image</span>
-                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF up to 5MB</p>
+                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF, WEBP up to 2MB</p>
                           </div>
                         </div>
-                        <input type="file" onChange={handleFileChange} className="sr-only" accept="image/*" required />
+                        <input 
+                          type="file" 
+                          onChange={handleFileChange} 
+                          className="sr-only" 
+                          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" 
+                          required 
+                        />
                       </label>
                     )}
                   </div>

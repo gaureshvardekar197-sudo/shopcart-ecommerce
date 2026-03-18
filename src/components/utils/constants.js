@@ -5,6 +5,26 @@ export const adminMenu = [
     icon: "LayoutDashboard",
     path: "/admin/dashboard"
   },
+    {
+    id: 3,
+    title: "Categories",
+    icon: "Layers",
+    type: "dropdown",
+    subItems: [
+      {
+        id: 31,
+        title: "Add New Category",
+        path: "/admin/categories/new",
+        icon: "Plus"
+      },
+      {
+        id: 32,
+        title: "View Categories",
+        path: "/admin/categories",
+        icon: "Eye"
+      }
+    ]
+  },
   {
     id: 2,
     title: "Products",
@@ -25,26 +45,7 @@ export const adminMenu = [
       }
     ]
   },
-  {
-    id: 3,
-    title: "Categories",
-    icon: "Layers",
-    type: "dropdown",
-    subItems: [
-      {
-        id: 31,
-        title: "Add New Category",
-        path: "/admin/categories/new",
-        icon: "Plus"
-      },
-      {
-        id: 32,
-        title: "View Categories",
-        path: "/admin/categories",
-        icon: "Eye"
-      }
-    ]
-  },
+
   {
     id: 4,
     title: "Orders",

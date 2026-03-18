@@ -32,19 +32,15 @@ const EditCategory = () => {
   const [preview, setPreview] = useState(null);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
-  // Load category data from API
+  // Load category data from API - FIXED: Don't pass token
   useEffect(() => {
     const fetchCategory = async () => {
       try {
         setIsLoading(true);
-        const token = localStorage.getItem('token');
         
-        if (!token) {
-          setError('No authentication token found');
-          return;
-        }
-
-        const response = await getCategory(token, id);
+        // Just pass the ID - token is handled by axios interceptor
+        const response = await getCategory(id);
+        
         console.log('Category data:', response);
         
         let categoryData = response.data || response;
@@ -116,8 +112,8 @@ const EditCategory = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Check file size (match Laravel validation - 2MB)
-      if (file.size > 5 * 1024 * 1024) {
+      // Check file size (2MB max)
+      if (file.size > 2 * 1024 * 1024) {
         Swal.fire({
           icon: 'error',
           title: 'File Too Large',
@@ -129,12 +125,12 @@ const EditCategory = () => {
       }
       
       // Check file type
-      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
       if (!allowedTypes.includes(file.type)) {
         Swal.fire({
           icon: 'error',
           title: 'Invalid File Type',
-          text: 'Please upload JPG, JPEG, PNG or GIF images only',
+          text: 'Please upload JPG, JPEG, PNG, GIF or WEBP images only',
           timer: 3000,
           showConfirmButton: true
         });
@@ -285,14 +281,6 @@ const EditCategory = () => {
       setIsSubmitting(true);
       showLoadingMessage();
 
-      const token = localStorage.getItem('token');
-      
-      if (!token) {
-        Swal.close();
-        showErrorMessage('Authentication token not found');
-        return;
-      }
-
       const formPayload = new FormData();
       formPayload.append('name', formData.name.trim());
       formPayload.append('slug', formData.slug || '');
@@ -309,7 +297,8 @@ const EditCategory = () => {
 
       console.log('Submitting form data:', Object.fromEntries(formPayload));
       
-      await updateCategory(token, id, formPayload);
+      // FIXED: Don't pass token separately
+      await updateCategory(id, formPayload);
 
       // Close loading
       Swal.close();
@@ -569,7 +558,7 @@ const EditCategory = () => {
                             <span className="font-medium text-blue-600 hover:text-blue-500">
                               Click to upload new image
                             </span>
-                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF up to 5MB</p>
+                            <p className="text-xs text-gray-500 mt-2">PNG, JPG, GIF up to 2MB</p>
                             <p className="text-xs text-gray-400 mt-1 italic">
                               Leave empty to keep existing image
                             </p>
@@ -579,7 +568,7 @@ const EditCategory = () => {
                           type="file"
                           onChange={handleFileChange}
                           className="sr-only"
-                          accept="image/*"
+                          accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
                         />
                       </label>
                     )}

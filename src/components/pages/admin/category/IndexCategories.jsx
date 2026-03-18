@@ -28,20 +28,15 @@ const AdminCategories = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10); // Show 10 categories per page
 
-  // Fetch categories
+  // Fetch categories - FIXED: Don't pass token
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem('token');
+      setLoading(true);
       
-      if (!token) {
-        console.error('No token found');
-        setCategories([]);
-        setFilteredCategories([]);
-        setLoading(false);
-        return;
-      }
-
-      const response = await getCategories(token);
+      // Just call getCategories without token - handled by axios interceptor
+      const response = await getCategories();
+      
+      console.log('Categories response:', response);
       
       if (response && response.data) {
         setCategories(response.data);
@@ -49,6 +44,12 @@ const AdminCategories = () => {
       } else if (Array.isArray(response)) {
         setCategories(response);
         setFilteredCategories(response);
+      } else if (response && response.categories) {
+        setCategories(response.categories);
+        setFilteredCategories(response.categories);
+      } else {
+        setCategories([]);
+        setFilteredCategories([]);
       }
     } catch (error) {
       console.error("Fetch error:", error.response?.data || error.message);
@@ -79,7 +80,7 @@ const AdminCategories = () => {
     // Apply search
     if (searchTerm) {
       result = result.filter(category => 
-        category.name.toLowerCase().includes(searchTerm.toLowerCase())
+        category.name?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
@@ -113,7 +114,7 @@ const AdminCategories = () => {
     });
   };
 
-  // Delete handler with SweetAlert
+  // Delete handler with SweetAlert - FIXED: Don't pass token
   const handleDelete = (id, categoryName) => {
     Swal.fire({
       title: 'Are you sure?',
@@ -146,8 +147,8 @@ const AdminCategories = () => {
             background: '#f8f9fa'
           });
 
-          const token = localStorage.getItem('token');
-          await deleteCategory(token, id);
+          // Just pass the ID - token is handled by axios interceptor
+          await deleteCategory(id);
           
           // Close loading
           Swal.close();
@@ -191,8 +192,8 @@ const AdminCategories = () => {
 
   // Image URL helper
   const getImageUrl = (category) => {
-    if (!category.image) {
-      return "https://via.placeholder.com/48?text=Img";
+    if (!category || !category.image) {
+      return "https://via.placeholder.com/48?text=No+Img";
     }
     
     if (category.image.startsWith('http')) {
@@ -347,7 +348,7 @@ const AdminCategories = () => {
                   <th className="px-6 py-3 text-left">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y divide-gray-200">
                 {filteredCategories.length === 0 ? (
                   <tr>
                     <td colSpan="4" className="text-center py-8 text-gray-500">
@@ -356,16 +357,16 @@ const AdminCategories = () => {
                   </tr>
                 ) : (
                   getCurrentPageItems().map((category) => (
-                    <tr key={category.id} className="hover:bg-gray-50">
+                    <tr key={category.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-4">
                           <img
                             src={getImageUrl(category)}
                             alt={category.name}
-                            className="w-12 h-12 rounded-lg object-cover bg-gray-100"
+                            className="w-12 h-12 rounded-lg object-cover bg-gray-100 border border-gray-200"
                             onError={(e) => {
                               e.target.onerror = null;
-                              e.target.src = "https://via.placeholder.com/48?text=Img";
+                              e.target.src = "https://via.placeholder.com/48?text=No+Img";
                             }}
                           />
                           <div>
@@ -399,28 +400,28 @@ const AdminCategories = () => {
                           {/* View Button */}
                           <Link
                             to={`/admin/categories/${category.id}`}
-                            className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                            className="p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors group"
                             title="View category details"
                           >
-                            <Eye className="w-4 h-4 text-gray-600" />
+                            <Eye className="w-4 h-4 text-gray-600 group-hover:text-gray-800" />
                           </Link>
                           
                           {/* Edit Button */}
                           <Link
                             to={`/admin/categories/edit/${category.id}`}
-                            className="p-2 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
+                            className="p-2 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors group"
                             title="Edit category"
                           >
-                            <Edit className="w-4 h-4 text-blue-600" />
+                            <Edit className="w-4 h-4 text-blue-600 group-hover:text-blue-800" />
                           </Link>
                           
                           {/* Delete Button */}
                           <button
                             onClick={() => handleDelete(category.id, category.name)}
-                            className="p-2 bg-red-100 rounded-lg hover:bg-red-200 transition-colors"
+                            className="p-2 bg-red-100 rounded-lg hover:bg-red-200 transition-colors group"
                             title="Delete category"
                           >
-                            <Trash2 className="w-4 h-4 text-red-600" />
+                            <Trash2 className="w-4 h-4 text-red-600 group-hover:text-red-800" />
                           </button>
                         </div>
                       </td>
@@ -434,13 +435,15 @@ const AdminCategories = () => {
 
         {/* Pagination */}
         {filteredCategories.length > 0 && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={handlePageChange}
-            itemsPerPage={itemsPerPage}
-            totalItems={filteredCategories.length}
-          />
+          <div className="mt-6">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+              itemsPerPage={itemsPerPage}
+              totalItems={filteredCategories.length}
+            />
+          </div>
         )}
       </div>
     </div>

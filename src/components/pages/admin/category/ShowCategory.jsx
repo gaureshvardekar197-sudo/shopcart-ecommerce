@@ -22,19 +22,15 @@ const ShowCategory = () => {
   const [error, setError] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Fetch single category
+  // Fetch single category - FIXED: Don't pass token as separate parameter
   const fetchCategory = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
       
-      if (!token) {
-        setError('No authentication token found');
-        setLoading(false);
-        return;
-      }
-
-      const response = await getCategory(token, id);
+      // Just pass the ID - token is handled by axios interceptor
+      const response = await getCategory(id);
+      
+      console.log('Category Response:', response); // Debug log
       
       if (response && response.data) {
         setCategory(response.data);
@@ -52,17 +48,18 @@ const ShowCategory = () => {
   };
 
   useEffect(() => {
-    fetchCategory();
+    if (id) {
+      fetchCategory();
+    }
   }, [id]);
 
-  // Handle delete
+  // Handle delete - FIXED: Don't pass token as separate parameter
   const handleDelete = async () => {
     if (!window.confirm("Are you sure you want to delete this category?")) return;
 
     try {
       setDeleteLoading(true);
-      const token = localStorage.getItem('token');
-      await deleteCategory(token, id);
+      await deleteCategory(id);
       alert('Category deleted successfully');
       navigate('/admin/categories');
     } catch (error) {
@@ -134,7 +131,7 @@ const ShowCategory = () => {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-      {/* Header - Mobile Optimized */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <Link
@@ -146,7 +143,7 @@ const ShowCategory = () => {
           <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Category Details</h1>
         </div>
         
-        {/* Action Buttons - Stack on Mobile */}
+        {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
           <Link
             to={`/admin/categories/edit/${category.id}`}
@@ -166,9 +163,9 @@ const ShowCategory = () => {
         </div>
       </div>
 
-      {/* Content Grid - Mobile First */}
+      {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Image Section - Full width on mobile */}
+        {/* Image Section */}
         <div className="lg:col-span-1">
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="p-3 sm:p-4 bg-gray-50 border-b">
@@ -295,15 +292,6 @@ const ShowCategory = () => {
                   <p className="font-medium text-sm sm:text-base">{formatDate(category.updated_at)}</p>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Additional Info - Mobile Only */}
-          <div className="block sm:hidden">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-xs text-blue-600 text-center">
-                Swipe down to see more details
-              </p>
             </div>
           </div>
         </div>
