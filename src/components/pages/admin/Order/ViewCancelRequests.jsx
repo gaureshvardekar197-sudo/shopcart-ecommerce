@@ -310,7 +310,7 @@ const fetchRequestDetails = async () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
               <Link
-                to="/admin/cancellation-requests"
+                to="/admin/orders/cancellation-requests"
                 className="p-1.5 sm:p-2 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
               >
                 <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
