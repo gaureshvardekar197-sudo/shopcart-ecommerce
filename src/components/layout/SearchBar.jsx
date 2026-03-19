@@ -10,11 +10,13 @@ import {
   FireIcon,
   StarIcon,
   ChevronRightIcon,
-  TrashIcon
+  TrashIcon,
+  ExclamationCircleIcon
 } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { getProducts } from '../API/api-products';
 import { getCategories } from '../API/api-categories';
+import { toast } from 'react-toastify';
 
 const SearchBar = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,55 +28,97 @@ const SearchBar = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [allCategories, setAllCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [error, setError] = useState('');
+  const [connectionError, setConnectionError] = useState(false);
   
   const searchRef = useRef(null);
   const inputRef = useRef(null);
   const navigate = useNavigate();
+  const loadAttempted = useRef(false);
 
   // Load all products and categories once when component mounts
   useEffect(() => {
-    loadAllData();
+    if (!loadAttempted.current) {
+      loadAttempted.current = true;
+      loadAllData();
+    }
   }, []);
 
   const loadAllData = async () => {
+    setIsInitialLoading(true);
+    setConnectionError(false);
+    
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        getProducts({ limit: 100 }),
-        getCategories({ limit: 100 })
+      console.log('Loading initial data for search...');
+      
+      // Use Promise.allSettled to handle individual failures
+      const [productsResult, categoriesResult] = await Promise.allSettled([
+        getProducts({ limit: 100 }).catch(err => {
+          console.error('Products API failed:', err);
+          return { data: [] };
+        }),
+        getCategories({ limit: 100 }).catch(err => {
+          console.error('Categories API failed:', err);
+          return { data: [] };
+        })
       ]);
 
-      // Parse products response
+      // Process products response
       let products = [];
-      if (productsRes) {
-        if (productsRes.data && Array.isArray(productsRes.data)) {
+      if (productsResult.status === 'fulfilled' && productsResult.value) {
+        const productsRes = productsResult.value;
+        if (productsRes?.data && Array.isArray(productsRes.data)) {
           products = productsRes.data;
         } else if (Array.isArray(productsRes)) {
           products = productsRes;
-        } else if (productsRes.products && Array.isArray(productsRes.products)) {
+        } else if (productsRes?.products && Array.isArray(productsRes.products)) {
           products = productsRes.products;
         }
       }
       setAllProducts(products);
 
-      // Parse categories response
+      // Process categories response
       let categories = [];
-      if (categoriesRes) {
-        if (categoriesRes.data && Array.isArray(categoriesRes.data)) {
+      if (categoriesResult.status === 'fulfilled' && categoriesResult.value) {
+        const categoriesRes = categoriesResult.value;
+        if (categoriesRes?.data && Array.isArray(categoriesRes.data)) {
           categories = categoriesRes.data;
         } else if (Array.isArray(categoriesRes)) {
           categories = categoriesRes;
-        } else if (categoriesRes.categories && Array.isArray(categoriesRes.categories)) {
+        } else if (categoriesRes?.categories && Array.isArray(categoriesRes.categories)) {
           categories = categoriesRes.categories;
         }
       }
       setAllCategories(categories);
 
+      // Show warning if one of the APIs failed
+      if (productsResult.status === 'rejected' || categoriesResult.status === 'rejected') {
+        setConnectionError(true);
+        toast.warning('Some search features may be limited', {
+          position: 'top-right',
+          autoClose: 5000
+        });
+      }
+
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading initial data:', error);
+      setConnectionError(true);
+      toast.error('Failed to load search data. Please refresh the page.', {
+        position: 'top-right',
+        autoClose: 5000
+      });
+    } finally {
+      setIsInitialLoading(false);
     }
+  };
+
+  // Retry loading data if failed
+  const retryLoadData = () => {
+    loadAttempted.current = false;
+    loadAllData();
   };
 
   // Load recent searches from localStorage
@@ -83,8 +127,12 @@ const SearchBar = () => {
   }, []);
 
   const loadRecentSearches = () => {
-    const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
-    setSuggestions(prev => ({ ...prev, recent }));
+    try {
+      const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+      setSuggestions(prev => ({ ...prev, recent }));
+    } catch (error) {
+      console.error('Error loading recent searches:', error);
+    }
   };
 
   // Handle click outside to close suggestions
@@ -115,6 +163,7 @@ const SearchBar = () => {
     if (!searchTerm.trim() || searchTerm.trim().length < 2) return;
     
     setIsLoading(true);
+    setError('');
     
     try {
       const term = searchTerm.toLowerCase().trim();
@@ -153,22 +202,34 @@ const SearchBar = () => {
   };
 
   const saveRecentSearch = (term) => {
-    const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
-    const updated = [term, ...recent.filter(t => t !== term)].slice(0, 5);
-    localStorage.setItem('recentSearches', JSON.stringify(updated));
-    setSuggestions(prev => ({ ...prev, recent: updated }));
+    try {
+      const recent = JSON.parse(localStorage.getItem('recentSearches') || '[]');
+      const updated = [term, ...recent.filter(t => t !== term)].slice(0, 5);
+      localStorage.setItem('recentSearches', JSON.stringify(updated));
+      setSuggestions(prev => ({ ...prev, recent: updated }));
+    } catch (error) {
+      console.error('Error saving recent search:', error);
+    }
   };
 
   const removeRecentSearch = (termToRemove, e) => {
-    e.stopPropagation(); // Prevent triggering the parent button click
-    const recent = suggestions.recent.filter(term => term !== termToRemove);
-    localStorage.setItem('recentSearches', JSON.stringify(recent));
-    setSuggestions(prev => ({ ...prev, recent }));
+    e.stopPropagation();
+    try {
+      const recent = suggestions.recent.filter(term => term !== termToRemove);
+      localStorage.setItem('recentSearches', JSON.stringify(recent));
+      setSuggestions(prev => ({ ...prev, recent }));
+    } catch (error) {
+      console.error('Error removing recent search:', error);
+    }
   };
 
   const clearAllRecentSearches = () => {
-    localStorage.removeItem('recentSearches');
-    setSuggestions(prev => ({ ...prev, recent: [] }));
+    try {
+      localStorage.removeItem('recentSearches');
+      setSuggestions(prev => ({ ...prev, recent: [] }));
+    } catch (error) {
+      console.error('Error clearing recent searches:', error);
+    }
   };
 
   const handleSearch = (e) => {
@@ -183,14 +244,12 @@ const SearchBar = () => {
   const handleProductClick = (product) => {
     setShowSuggestions(false);
     setSearchTerm('');
-    // Navigate to product details page with product ID
     navigate(`/products/${product.id}`);
   };
 
   const handleCategoryClick = (category) => {
     setShowSuggestions(false);
     setSearchTerm('');
-    // Navigate to category products page with category ID or slug
     const categoryPath = category.slug ? `/category/${category.slug}` : `/category/${category.id}`;
     navigate(categoryPath);
   };
@@ -205,6 +264,7 @@ const SearchBar = () => {
     setSearchTerm('');
     setSuggestions(prev => ({ ...prev, products: [], categories: [] }));
     setError('');
+    setActiveIndex(-1);
     inputRef.current?.focus();
   };
 
@@ -273,18 +333,36 @@ const SearchBar = () => {
 
   // Highlight matching text
   const highlightText = (text, highlight) => {
-    if (!highlight.trim()) return text;
-    const regex = new RegExp(`(${highlight})`, 'gi');
-    const parts = text.split(regex);
-    return parts.map((part, i) => 
-      regex.test(part) ? 
-        <span key={i} className="bg-yellow-200 dark:bg-yellow-800 font-semibold">{part}</span> : 
-        part
-    );
+    if (!highlight.trim() || !text) return text;
+    try {
+      const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      const parts = text.split(regex);
+      return parts.map((part, i) => 
+        regex.test(part) ? 
+          <span key={i} className="bg-yellow-200 dark:bg-yellow-800 font-semibold">{part}</span> : 
+          part
+      );
+    } catch (error) {
+      return text;
+    }
   };
 
   return (
     <div ref={searchRef} className="relative w-full">
+      {/* Connection Error Banner */}
+      {connectionError && (
+        <div className="absolute -top-8 left-0 right-0 flex items-center justify-center gap-2 text-xs text-yellow-600 dark:text-yellow-400">
+          <ExclamationCircleIcon className="h-3 w-3" />
+          <span>Search may be limited</span>
+          <button 
+            onClick={retryLoadData}
+            className="underline hover:no-underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSearch} className="relative group">
         <input
           ref={inputRef}
@@ -293,16 +371,21 @@ const SearchBar = () => {
           onChange={(e) => setSearchTerm(e.target.value)}
           onFocus={() => setShowSuggestions(true)}
           onKeyDown={handleKeyDown}
-          placeholder="Search for products, categories..."
-          className="w-full pl-12 pr-12 py-3.5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:text-white shadow-lg hover:shadow-xl transition-all duration-300"
+          placeholder={isInitialLoading ? "Loading search..." : "Search for products, categories..."}
+          className="w-full pl-12 pr-12 py-3.5 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:text-white shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50"
+          disabled={isInitialLoading}
           autoComplete="off"
         />
         
         <div className="absolute left-4 top-1/2 transform -translate-y-1/2">
-          <MagnifyingGlassIcon className="h-5 w-5 text-blue-500 dark:text-blue-400 group-focus-within:scale-110 transition-transform duration-200" />
+          {isInitialLoading ? (
+            <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <MagnifyingGlassIcon className="h-5 w-5 text-blue-500 dark:text-blue-400 group-focus-within:scale-110 transition-transform duration-200" />
+          )}
         </div>
         
-        {searchTerm && (
+        {searchTerm && !isInitialLoading && (
           <button
             type="button"
             onClick={clearSearch}
@@ -314,7 +397,7 @@ const SearchBar = () => {
       </form>
 
       {/* Suggestions Dropdown */}
-      {showSuggestions && (
+      {showSuggestions && !isInitialLoading && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 animate-slideDown">
           
           {/* Error Message */}

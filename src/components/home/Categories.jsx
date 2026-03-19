@@ -1,17 +1,16 @@
+// Categories.jsx
 import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import Container from '../layout/Container';
-import axios from 'axios';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Pagination, Autoplay } from 'swiper/modules';
+import { getCategories } from '../API/api-categories';
 
 // Import Swiper styles
 import 'swiper/css';
 import 'swiper/css/navigation';
 import 'swiper/css/pagination';
 import 'swiper/css/autoplay';
-
-const API_URL = "http://localhost:8000";
 
 export default function Categories() {
   const [categories, setCategories] = useState([]);
@@ -29,63 +28,58 @@ export default function Categories() {
       setLoading(true);
       setError(null);
       
-      const res = await axios.get(`${API_URL}/api/categories`, {
-        timeout: 10000,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        }
-      });
-      
-      console.log('API Response:', res.data);
+      const response = await getCategories();
       
       // Extract categories from response
       let categoriesData = [];
-      if (res.data && res.data.data) {
-        categoriesData = res.data.data;
-      } else if (res.data && res.data.categories) {
-        categoriesData = res.data.categories;
-      } else if (Array.isArray(res.data)) {
-        categoriesData = res.data;
+      if (response?.data) {
+        categoriesData = response.data;
+      } else if (response?.categories) {
+        categoriesData = response.categories;
+      } else if (Array.isArray(response)) {
+        categoriesData = response;
       }
       
-      // Filter only active categories for frontend
+      // Filter only active categories
       const activeCategories = categoriesData.filter(cat => 
-        cat.status === 1 || cat.status === true
+        cat.status === 1 || cat.status === true || cat.status === 'active'
       );
       
       setCategories(activeCategories);
     } catch (error) {
       console.error("Error fetching categories:", error);
-      setError(error.response?.data?.message || 'Failed to load categories');
+      
+      if (error.code === 'ECONNABORTED') {
+        setError('Request timeout - please check your connection');
+      } else if (error.response) {
+        setError(error.response.data?.message || `Server error: ${error.response.status}`);
+      } else if (error.request) {
+        setError('Cannot connect to server - please check if the backend is running');
+      } else {
+        setError(error.message || 'Failed to load categories');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Function to get image URL
   const getImageUrl = (category) => {
     if (!category || !category.image) {
       return `https://via.placeholder.com/400x300?text=${encodeURIComponent(category?.name || 'Category')}`;
     }
 
-    // If image_url is provided directly
     if (category.image_url) {
       return category.image_url;
     }
 
     const imagePath = category.image;
     
-    // If it's already a full URL
     if (imagePath.startsWith('http')) {
       return imagePath;
     }
 
-    // Remove any 'public/' prefix if present
     const cleanPath = imagePath.replace('public/', '');
-    
-    // Return the storage path
-    return `${API_URL}/storage/${cleanPath}`;
+    return `http://localhost:8000/storage/${cleanPath}`;
   };
 
   if (loading) {
@@ -96,9 +90,7 @@ export default function Categories() {
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Shop by Category
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              Loading categories...
-            </p>
+            <p className="text-gray-600 dark:text-gray-400">Loading categories...</p>
           </div>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -145,9 +137,7 @@ export default function Categories() {
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-4">
               Shop by Category
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-              No categories available at the moment
-            </p>
+            <p className="text-gray-600 dark:text-gray-400">No categories available at the moment</p>
           </div>
           
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-2xl">
@@ -170,9 +160,7 @@ export default function Categories() {
           </p>
         </div>
         
-        {/* Categories Slider */}
         <div className="relative px-4 md:px-10">
-          {/* Custom Navigation Buttons */}
           <button 
             ref={prevRef}
             className="absolute left-0 top-1/2 -translate-y-1/2 z-10 w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-gray-800 rounded-full shadow-lg flex items-center justify-center hover:bg-blue-600 dark:hover:bg-blue-600 hover:text-white dark:text-gray-300 dark:hover:text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -212,18 +200,9 @@ export default function Categories() {
             }}
             loop={categories.length > 4}
             breakpoints={{
-              640: {
-                slidesPerView: 3,
-                spaceBetween: 20,
-              },
-              768: {
-                slidesPerView: 4,
-                spaceBetween: 25,
-              },
-              1024: {
-                slidesPerView: 4,
-                spaceBetween: 30,
-              },
+              640: { slidesPerView: 3, spaceBetween: 20 },
+              768: { slidesPerView: 4, spaceBetween: 25 },
+              1024: { slidesPerView: 4, spaceBetween: 30 },
             }}
             onInit={(swiper) => {
               swiper.params.navigation.prevEl = prevRef.current;
@@ -236,10 +215,9 @@ export default function Categories() {
             {categories.map(category => (
               <SwiperSlide key={category.id}>
                 <Link 
-                  to={`/category/${category.slug}`} // Using slug instead of name
+                  to={`/category/${category.slug || category.id}`}
                   className="group block bg-white dark:bg-gray-800 rounded-2xl shadow-lg hover:shadow-2xl dark:shadow-gray-900/30 transition-all duration-300 overflow-hidden"
                 >
-                  {/* Category Image */}
                   <div className="relative h-48 md:h-56 overflow-hidden">
                     <img
                       src={getImageUrl(category)}
@@ -251,10 +229,8 @@ export default function Categories() {
                       }}
                     />
                     
-                    {/* Overlay with gradient */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                     
-                    {/* Popular Badge */}
                     {(category.popular === 1 || category.popular === true) && (
                       <div className="absolute top-3 right-3 bg-gradient-to-r from-yellow-400 to-orange-400 text-white px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-bold shadow-lg z-10">
                         🔥 Popular
@@ -262,7 +238,6 @@ export default function Categories() {
                     )}
                   </div>
 
-                  {/* Category Info */}
                   <div className="p-4 md:p-5 text-center">
                     <h3 className="font-bold text-lg md:text-xl text-gray-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors mb-2">
                       {category.name}
@@ -274,7 +249,6 @@ export default function Categories() {
                       </p>
                     )}
                     
-                    {/* Product Count (if available) */}
                     {category.products_count > 0 && (
                       <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 md:mt-3">
                         {category.products_count} Products
@@ -288,44 +262,14 @@ export default function Categories() {
         </div>
       </Container>
 
-      {/* Custom styles for Swiper */}
-      <style jsx>{`
-        .categories-swiper {
-          padding: 10px 5px 40px 5px;
-        }
-        
-        .swiper-pagination-bullet {
-          width: 8px;
-          height: 8px;
-          background: #d1d5db;
-          opacity: 1;
-          transition: all 0.3s ease;
-        }
-        
-        .dark .swiper-pagination-bullet {
-          background: #4b5563;
-        }
-        
-        .swiper-pagination-bullet-active {
-          width: 20px;
-          background: #3b82f6;
-          border-radius: 4px;
-        }
-        
-        .dark .swiper-pagination-bullet-active {
-          background: #60a5fa;
-        }
-        
-        .swiper-button-disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-        
-        @media (max-width: 640px) {
-          .categories-swiper {
-            padding: 10px 5px 30px 5px;
-          }
-        }
+      <style>{`
+        .categories-swiper { padding: 10px 5px 40px 5px; }
+        .swiper-pagination-bullet { width: 8px; height: 8px; background: #d1d5db; opacity: 1; transition: all 0.3s ease; }
+        .dark .swiper-pagination-bullet { background: #4b5563; }
+        .swiper-pagination-bullet-active { width: 20px; background: #3b82f6; border-radius: 4px; }
+        .dark .swiper-pagination-bullet-active { background: #60a5fa; }
+        .swiper-button-disabled { opacity: 0.5; cursor: not-allowed; }
+        @media (max-width: 640px) { .categories-swiper { padding: 10px 5px 30px 5px; } }
       `}</style>
     </section>
   );

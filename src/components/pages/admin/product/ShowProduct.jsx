@@ -70,78 +70,97 @@ const ShowProduct = () => {
     return null;
   };
 
-  const fetchProduct = async (productId) => {
-    try {
-      setLoading(true);
-      
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('No authentication token found');
-        setLoading(false);
-        return;
-      }
+// ShowProduct.jsx - Updated fetchProduct function
 
-      const response = await getProduct(token, productId);
-      const productData = response.data || response;
-      
-      if (!productData || !productData.id) {
-        throw new Error('Product not found');
-      }
-
-      setProduct(productData);
-      
-      if (productData.image_url) {
-        setSelectedImage(productData.image_url);
-      } else if (productData.image) {
-        setSelectedImage(getImageUrl(productData));
-      }
-
-      // Fetch sizes for this product
-      await fetchProductSizes(productId);
-      
-      setError(null);
-    } catch (error) {
-      console.error("Fetch error:", error.response?.data || error.message);
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to load product';
-      setError(errorMessage);
-      
-      Swal.fire({
-        icon: 'error',
-        title: 'Loading Failed',
-        text: errorMessage,
-        confirmButtonColor: '#d33',
-      });
-    } finally {
+const fetchProduct = async (productId) => {
+  try {
+    setLoading(true);
+    
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setError('No authentication token found');
       setLoading(false);
+      return;
     }
-  };
 
-  const fetchProductSizes = async (productId) => {
-    try {
-      setLoadingSizes(true);
-      const token = localStorage.getItem('token');
-      
-      // Try to get sizes from product data first
-      if (product?.sizes && product.sizes.length > 0) {
-        setSizes(product.sizes);
-      } else {
-        // Fetch sizes from API
-        const sizesResponse = await sizeApi.getProductSizes(productId);
-        const sizesData = sizesResponse.data || sizesResponse;
-        
-        if (Array.isArray(sizesData)) {
-          setSizes(sizesData);
-        } else if (sizesData && Array.isArray(sizesData.sizes)) {
-          setSizes(sizesData.sizes);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching sizes:', error);
-      // Don't show error to user, just log it
-    } finally {
-      setLoadingSizes(false);
+    // FIXED: Pass ID first, then token
+    const response = await getProduct(productId, token);
+    
+    // Handle different response structures
+    let productData;
+    if (response && response.data) {
+      productData = response.data;
+    } else if (response && response.status === false) {
+      throw new Error(response.message || 'Product not found');
+    } else {
+      productData = response;
     }
-  };
+    
+    if (!productData || !productData.id) {
+      throw new Error('Product not found');
+    }
+
+    setProduct(productData);
+    
+    if (productData.image_url) {
+      setSelectedImage(productData.image_url);
+    } else if (productData.image) {
+      setSelectedImage(getImageUrl(productData));
+    }
+
+    // Fetch sizes for this product
+    await fetchProductSizes(productId);
+    
+    setError(null);
+  } catch (error) {
+    console.error("Fetch error:", error.response?.data || error.message);
+    const errorMessage = error.response?.data?.message || error.message || 'Failed to load product';
+    setError(errorMessage);
+    
+    Swal.fire({
+      icon: 'error',
+      title: 'Loading Failed',
+      text: errorMessage,
+      confirmButtonColor: '#d33',
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+const fetchProductSizes = async (productId) => {
+  try {
+    setLoadingSizes(true);
+    const token = localStorage.getItem('token');
+    
+    // Try to get sizes from product data first
+    if (product?.sizes && product.sizes.length > 0) {
+      setSizes(product.sizes);
+    } else {
+      // Fetch sizes from API - make sure to pass ID correctly
+      const sizesResponse = await sizeApi.getProductSizes(productId);
+      
+      // Handle different response structures
+      let sizesData;
+      if (sizesResponse && sizesResponse.data) {
+        sizesData = sizesResponse.data;
+      } else {
+        sizesData = sizesResponse;
+      }
+      
+      if (Array.isArray(sizesData)) {
+        setSizes(sizesData);
+      } else if (sizesData && Array.isArray(sizesData.sizes)) {
+        setSizes(sizesData.sizes);
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching sizes:', error);
+    // Don't show error to user, just log it
+  } finally {
+    setLoadingSizes(false);
+  }
+};
 
   const handleDelete = () => {
     Swal.fire({

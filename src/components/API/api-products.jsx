@@ -7,8 +7,10 @@ const API_URL = "http://localhost:8000/api";
 const api = axios.create({
   baseURL: API_URL,
   headers: {
-    'Accept': 'application/json'
-  }
+    'Accept': 'application/json',
+    'Content-Type': 'application/json'
+  },
+  timeout: 30000 // Increased timeout to 30 seconds
 });
 
 // Helper function to extract numeric ID
@@ -70,6 +72,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.code === 'ECONNABORTED') {
+      console.error('Request timeout - server is not responding');
+    }
+    
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
@@ -83,58 +89,68 @@ api.interceptors.response.use(
  * PUBLIC PRODUCT ENDPOINTS (No Auth Required for GET)
  */
 
-// Get all products with search and pagination - UPDATED
+// Get all products with search and pagination - FIXED with null check
 export const getProducts = async (params = {}) => {
   try {
+    // Ensure params is an object, even if null or undefined is passed
+    const safeParams = params || {};
+    
     // Build query parameters
     const queryParams = new URLSearchParams();
     
     // Add search parameter if provided
-    if (params.search) {
-      queryParams.append('search', params.search);
+    if (safeParams.search) {
+      queryParams.append('search', safeParams.search);
     }
     
     // Add pagination
-    if (params.limit) {
-      queryParams.append('limit', params.limit);
+    if (safeParams.limit) {
+      queryParams.append('limit', safeParams.limit);
     }
     
-    if (params.page) {
-      queryParams.append('page', params.page);
+    if (safeParams.page) {
+      queryParams.append('page', safeParams.page);
     }
     
     // Add sorting
-    if (params.sort) {
-      queryParams.append('sort', params.sort);
+    if (safeParams.sort) {
+      queryParams.append('sort', safeParams.sort);
     }
     
     // Add category filter
-    if (params.category) {
-      queryParams.append('category', params.category);
+    if (safeParams.category) {
+      queryParams.append('category', safeParams.category);
     }
     
     // Add price range
-    if (params.min_price) {
-      queryParams.append('min_price', params.min_price);
+    if (safeParams.min_price) {
+      queryParams.append('min_price', safeParams.min_price);
     }
     
-    if (params.max_price) {
-      queryParams.append('max_price', params.max_price);
+    if (safeParams.max_price) {
+      queryParams.append('max_price', safeParams.max_price);
     }
     
     const queryString = queryParams.toString();
     const url = queryString ? `/products?${queryString}` : '/products';
     
+    console.log('Fetching products from:', url);
+    
     const response = await api.get(url);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getProducts:', error.message);
+    
+    // Return a fallback empty response to prevent UI crashes
+    if (error.code === 'ECONNABORTED') {
+      return { data: [], message: 'Request timeout - please try again' };
+    }
+    
     throw error;
   }
 };
 
-// Get single product by ID with all details (including sizes)
-export const getProduct = async (token, id) => {
+export const getProduct = async (id, token = null) => {
   try {
     // Clean the ID first
     const cleanId = extractNumericId(id);
@@ -143,14 +159,32 @@ export const getProduct = async (token, id) => {
       throw new Error('Invalid product ID format');
     }
     
-    console.log('Original ID:', id, 'Cleaned ID:', cleanId);
+    console.log('Fetching product with ID:', cleanId);
     
-    const response = await api.get(`/products/${cleanId}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    });
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const response = await api.get(`/products/${cleanId}`, { headers });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getProduct:', error.message);
+    
+    // Handle 404 specifically
+    if (error.response?.status === 404) {
+      // Return a structured error response instead of throwing
+      return { 
+        status: false, 
+        message: 'Product not found',
+        data: null 
+      };
+    }
+    
+    if (error.code === 'ECONNABORTED') {
+      return { 
+        status: false, 
+        message: 'Request timeout - please try again',
+        data: null 
+      };
+    }
+    
     throw error;
   }
 };
@@ -159,33 +193,41 @@ export const getProduct = async (token, id) => {
 export const getProductsByCategory = async (categoryId, params = {}) => {
   try {
     const cleanId = extractNumericId(categoryId) || categoryId;
+    const safeParams = params || {};
     
     // Build query parameters
     const queryParams = new URLSearchParams();
     
-    if (params.search) {
-      queryParams.append('search', params.search);
+    if (safeParams.search) {
+      queryParams.append('search', safeParams.search);
     }
     
-    if (params.limit) {
-      queryParams.append('limit', params.limit);
+    if (safeParams.limit) {
+      queryParams.append('limit', safeParams.limit);
     }
     
-    if (params.page) {
-      queryParams.append('page', params.page);
+    if (safeParams.page) {
+      queryParams.append('page', safeParams.page);
     }
     
-    if (params.sort) {
-      queryParams.append('sort', params.sort);
+    if (safeParams.sort) {
+      queryParams.append('sort', safeParams.sort);
     }
     
     const queryString = queryParams.toString();
     const url = queryString ? `/products/category/${cleanId}?${queryString}` : `/products/category/${cleanId}`;
     
+    console.log('Fetching products by category from:', url);
+    
     const response = await api.get(url);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getProductsByCategory:', error.message);
+    
+    if (error.code === 'ECONNABORTED') {
+      return { data: [], message: 'Request timeout - please try again' };
+    }
+    
     throw error;
   }
 };
@@ -205,7 +247,7 @@ export const createProduct = async (token, data) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in createProduct:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -227,7 +269,7 @@ export const updateProduct = async (token, id, data) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in updateProduct:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -244,9 +286,17 @@ export const deleteProduct = async (token, id) => {
     const response = await api.delete(`/admin/products/${cleanId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
+    
+    // Handle different response structures
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in deleteProduct:', error.response?.data || error.message);
+    
+    // If the error has a response, return it to be handled by the caller
+    if (error.response) {
+      return error.response.data;
+    }
+    
     throw error;
   }
 };
@@ -261,7 +311,7 @@ export const getSizeOptions = async () => {
     const response = await api.get('/sizes/options');
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getSizeOptions:', error.message);
     throw error;
   }
 };
@@ -272,7 +322,7 @@ export const getSizesByCategory = async (category) => {
     const response = await api.get(`/sizes/category/${category}`);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getSizesByCategory:', error.message);
     throw error;
   }
 };
@@ -284,7 +334,7 @@ export const getPriceRange = async (productId) => {
     const response = await api.get(`/sizes/price-range/${cleanId}`);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getPriceRange:', error.message);
     throw error;
   }
 };
@@ -296,7 +346,12 @@ export const getProductSizes = async (productId) => {
     const response = await api.get(`/products/${cleanId}/sizes`);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getProductSizes:', error.message);
+    
+    if (error.code === 'ECONNABORTED') {
+      return { data: { sizes: [] } };
+    }
+    
     throw error;
   }
 };
@@ -308,7 +363,7 @@ export const checkSizeAvailability = async (productId, sizeData) => {
     const response = await api.post(`/products/${cleanId}/sizes/check-availability`, sizeData);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in checkSizeAvailability:', error.message);
     throw error;
   }
 };
@@ -320,7 +375,7 @@ export const getSizeDetails = async (sizeId) => {
     const response = await api.get(`/sizes/${cleanId}`);
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in getSizeDetails:', error.message);
     throw error;
   }
 };
@@ -334,7 +389,7 @@ export const addProductSizes = async (token, productId, sizeData) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in addProductSizes:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -347,7 +402,7 @@ export const updateBulkSizes = async (token, productId, sizesData) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in updateBulkSizes:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -360,7 +415,7 @@ export const updateSize = async (token, sizeId, sizeData) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in updateSize:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -373,7 +428,7 @@ export const deleteSize = async (token, sizeId) => {
     });
     return response.data;
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error in deleteSize:', error.response?.data || error.message);
     throw error;
   }
 };

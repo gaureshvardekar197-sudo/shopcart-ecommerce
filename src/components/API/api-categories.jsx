@@ -120,8 +120,6 @@
 //     throw error;
 //   }
 // };
-
-
 // API/api-categories.jsx
 import api from "./axios";
 
@@ -166,25 +164,14 @@ const extractNumericId = (id) => {
   return null;
 };
 
-// Get all categories with optional search and pagination
+// Get all categories
 export const getCategories = async (params = {}) => {
   try {
-    // Build query parameters
     const queryParams = new URLSearchParams();
     
-    // Add search parameter if provided
-    if (params.search) {
-      queryParams.append('search', params.search);
-    }
-    
-    // Add pagination
-    if (params.limit) {
-      queryParams.append('limit', params.limit);
-    }
-    
-    if (params.page) {
-      queryParams.append('page', params.page);
-    }
+    if (params.search) queryParams.append('search', params.search);
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.page) queryParams.append('page', params.page);
     
     const queryString = queryParams.toString();
     const url = queryString ? `/categories?${queryString}` : '/categories';
@@ -197,19 +184,83 @@ export const getCategories = async (params = {}) => {
   }
 };
 
-// Get single category by ID - FIXED to handle encoded IDs
+// Get category by ID
 export const getCategory = async (id) => {
   try {
-    // Extract numeric ID first
     const cleanId = extractNumericId(id);
     
     if (!cleanId) {
       throw new Error('Invalid category ID format');
     }
     
-    console.log('Original ID:', id, 'Cleaned ID:', cleanId); // Debug log
-    
     const response = await api.get(`/categories/${cleanId}`);
+    return response.data;
+  } catch (error) {
+    console.error('API Error:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// Alias for getCategory
+export const getCategoryById = getCategory;
+
+// Get category by slug (fetches all categories and finds by slug)
+export const getCategoryBySlug = async (slug) => {
+  try {
+    console.log('Fetching category by slug:', slug);
+    
+    // Fetch all categories first
+    const response = await getCategories();
+    console.log('All categories response:', response);
+    
+    // Extract categories array from response
+    let categories = [];
+    if (response?.data) {
+      categories = response.data;
+    } else if (Array.isArray(response)) {
+      categories = response;
+    } else if (response?.categories) {
+      categories = response.categories;
+    }
+    
+    console.log('Categories array:', categories);
+    
+    // Find category by slug
+    const category = categories.find(cat => 
+      cat.slug === slug || 
+      cat.slug === decodeURIComponent(slug)
+    );
+    
+    if (!category) {
+      throw new Error('Category not found');
+    }
+    
+    return { data: category };
+  } catch (error) {
+    console.error('Error finding category by slug:', error);
+    throw error;
+  }
+};
+
+// Get products by category
+export const getCategoryProducts = async (categoryId, params = {}) => {
+  try {
+    const cleanId = extractNumericId(categoryId);
+    
+    if (!cleanId) {
+      throw new Error('Invalid category ID format');
+    }
+    
+    const queryParams = new URLSearchParams();
+    
+    if (params.page) queryParams.append('page', params.page);
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.sort) queryParams.append('sort', params.sort);
+    
+    const queryString = queryParams.toString();
+    const url = queryString ? `/categories/${cleanId}/products?${queryString}` : `/categories/${cleanId}/products`;
+    
+    const response = await api.get(url);
     return response.data;
   } catch (error) {
     console.error('API Error:', error.response?.data || error.message);
@@ -220,11 +271,7 @@ export const getCategory = async (id) => {
 // Create new category (Admin only)
 export const createCategory = async (data) => {
   try {
-    const response = await api.post('/admin/categories', data, {
-      headers: {
-        // Don't set Content-Type - browser will set it with boundary for FormData
-      }
-    });
+    const response = await api.post('/admin/categories', data);
     return response.data;
   } catch (error) {
     console.error('API Error:', error.response?.data || error.message);
@@ -232,7 +279,7 @@ export const createCategory = async (data) => {
   }
 };
 
-// Update category (Admin only) - FIXED to handle encoded IDs
+// Update category (Admin only)
 export const updateCategory = async (id, data) => {
   try {
     const cleanId = extractNumericId(id);
@@ -244,10 +291,6 @@ export const updateCategory = async (id, data) => {
     const response = await api.post(`/admin/categories/${cleanId}`, {
       ...data,
       _method: 'PUT'
-    }, {
-      headers: {
-        // Don't set Content-Type for FormData
-      }
     });
     return response.data;
   } catch (error) {
@@ -256,24 +299,7 @@ export const updateCategory = async (id, data) => {
   }
 };
 
-// Alternative update method with PUT - FIXED to handle encoded IDs
-export const updateCategoryPut = async (id, data) => {
-  try {
-    const cleanId = extractNumericId(id);
-    
-    if (!cleanId) {
-      throw new Error('Invalid category ID format');
-    }
-    
-    const response = await api.put(`/admin/categories/${cleanId}`, data);
-    return response.data;
-  } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
-    throw error;
-  }
-};
-
-// Delete category (Admin only) - FIXED to handle encoded IDs
+// Delete category (Admin only)
 export const deleteCategory = async (id) => {
   try {
     const cleanId = extractNumericId(id);
@@ -290,7 +316,7 @@ export const deleteCategory = async (id) => {
   }
 };
 
-// Search categories (public)
+// Search categories
 export const searchCategories = async (searchTerm, limit = 10) => {
   try {
     const response = await api.get(`/categories?search=${encodeURIComponent(searchTerm)}&limit=${limit}`);

@@ -101,7 +101,7 @@ function App() {
             <Route path="/contact" element={<PublicLayout><Contact /></PublicLayout>} />
             <Route path="/deals" element={<PublicLayout><Deals /></PublicLayout>} />
             <Route path="/wishlist" element={<PublicLayout><Wishlist /></PublicLayout>} />
-            <Route path="/category/:categorySlug" element={<PublicLayout><CategoryProducts /></PublicLayout>} />
+            <Route path="/category/:slug" element={<PublicLayout><CategoryProducts /></PublicLayout>} />
             {/* <Route path="/payment" element={<PublicLayout><PaymentGateway /></PublicLayout>} /> */}
 
             {/* ========== AUTH ROUTES ========== */}
