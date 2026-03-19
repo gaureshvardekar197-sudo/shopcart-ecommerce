@@ -223,45 +223,48 @@ function ProductDetails() {
     }
   }
 
-  const fetchProductDetails = async () => {
-    try {
-      setLoading(true)
-      const token = localStorage.getItem('token')
+// In ProductDetails.jsx - Update the fetchProductDetails function
 
-      const response = await getProduct(token, id)
-      const productData = response?.data || response
+const fetchProductDetails = async () => {
+  try {
+    setLoading(true)
+    const token = localStorage.getItem('token')
 
-      if (productData) {
-        setProduct(productData)
+    // FIXED: Pass id first, then token
+    const response = await getProduct(id, token)  // ✅ Correct order
+    const productData = response?.data || response
 
-        const colors = getColors(productData)
-        if (colors.length > 0) setSelectedColor(colors[0])
+    if (productData) {
+      setProduct(productData)
 
-        const productsResponse = await getProducts(token)
-        const allProducts = productsResponse?.data || productsResponse || []
+      const colors = getColors(productData)
+      if (colors.length > 0) setSelectedColor(colors[0])
 
-        const categoryName = getCategoryName(productData)
+      const productsResponse = await getProducts(token)
+      const allProducts = productsResponse?.data || productsResponse || []
 
-        const related = allProducts
-          .filter(p => {
-            if (p.id === Number(id)) return false
-            const pCategory = getCategoryName(p)
-            return pCategory === categoryName
-          })
-          .slice(0, 4)
+      const categoryName = getCategoryName(productData)
 
-        setRelatedProducts(related)
-      }
-    } catch (error) {
-      console.error('Error fetching product:', error)
-      toast.error('Failed to load product details', {
-        position: "top-right",
-        autoClose: 2000
-      })
-    } finally {
-      setLoading(false)
+      const related = allProducts
+        .filter(p => {
+          if (p.id === Number(id)) return false
+          const pCategory = getCategoryName(p)
+          return pCategory === categoryName
+        })
+        .slice(0, 4)
+
+      setRelatedProducts(related)
     }
+  } catch (error) {
+    console.error('Error fetching product:', error)
+    toast.error('Failed to load product details', {
+      position: "top-right",
+      autoClose: 2000
+    })
+  } finally {
+    setLoading(false)
   }
+}
 
   const fetchReviews = async () => {
     if (!id) return
