@@ -109,48 +109,51 @@ export default function CategoryProducts() {
     }
   };
 
-  const fetchProducts = async (categoryId) => {
-    try {
-      const token = localStorage.getItem("token");
-      const res = await getProducts(token);
-      
-      // Extract products array
-      const allProducts = res?.data || res || [];
-      
-      // Filter products by category ID
-      const filtered = allProducts.filter((product) => {
-        if (product.category_id) {
-          return Number(product.category_id) === Number(categoryId);
-        }
-        if (product.category?.id) {
-          return Number(product.category.id) === Number(categoryId);
-        }
-        return false;
-      });
+const fetchProducts = async (categoryId) => {
+  try {
+    // Remove the token parameter - getProducts doesn't need it
+    const res = await getProducts(); // Just call without parameters
+    
+    // Or if you want to pass params, pass an object:
+    // const res = await getProducts({ limit: 50 }); // Optional: add any filters
+    
+    // Extract products array
+    const allProducts = res?.data || res || [];
+    
+    // Filter products by category ID
+    const filtered = allProducts.filter((product) => {
+      if (product.category_id) {
+        return Number(product.category_id) === Number(categoryId);
+      }
+      if (product.category?.id) {
+        return Number(product.category.id) === Number(categoryId);
+      }
+      return false;
+    });
 
-      // Fetch sizes for each product
-      const productsWithSizes = await Promise.all(
-        filtered.map(async (product) => {
-          try {
-            const sizesResponse = await sizeApi.getProductSizes(product.id);
-            if (sizesResponse?.data?.sizes) {
-              return { ...product, sizes: sizesResponse.data.sizes };
-            }
-          } catch (error) {
-            console.error(`Error fetching sizes for product ${product.id}:`, error);
+    // Fetch sizes for each product
+    const productsWithSizes = await Promise.all(
+      filtered.map(async (product) => {
+        try {
+          const sizesResponse = await sizeApi.getProductSizes(product.id);
+          if (sizesResponse?.data?.sizes) {
+            return { ...product, sizes: sizesResponse.data.sizes };
           }
-          return product;
-        })
-      );
+        } catch (error) {
+          console.error(`Error fetching sizes for product ${product.id}:`, error);
+        }
+        return product;
+      })
+    );
 
-      setProducts(productsWithSizes);
-      await loadWishlist();
-      
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      toast.error("Failed to load products");
-    }
-  };
+    setProducts(productsWithSizes);
+    await loadWishlist();
+    
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    toast.error("Failed to load products");
+  }
+};
 
   const loadWishlist = async () => {
     if (!isAuthenticated) {

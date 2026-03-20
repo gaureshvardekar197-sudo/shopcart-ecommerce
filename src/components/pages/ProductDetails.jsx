@@ -224,14 +224,13 @@ function ProductDetails() {
   }
 
 // In ProductDetails.jsx - Update the fetchProductDetails function
-
 const fetchProductDetails = async () => {
   try {
     setLoading(true)
     const token = localStorage.getItem('token')
 
     // FIXED: Pass id first, then token
-    const response = await getProduct(id, token)  // ✅ Correct order
+    const response = await getProduct(id, token)
     const productData = response?.data || response
 
     if (productData) {
@@ -240,7 +239,11 @@ const fetchProductDetails = async () => {
       const colors = getColors(productData)
       if (colors.length > 0) setSelectedColor(colors[0])
 
-      const productsResponse = await getProducts(token)
+      // FIXED: Don't pass token to getProducts - it expects params object
+      const productsResponse = await getProducts()  // ✅ Just call without parameters
+      // OR if you want to add filters:
+      // const productsResponse = await getProducts({ limit: 50 }) // Optional params
+      
       const allProducts = productsResponse?.data || productsResponse || []
 
       const categoryName = getCategoryName(productData)
